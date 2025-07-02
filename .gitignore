@@ -32,8 +32,6 @@
 /_CoqProject
 /compile.pl
 # Generated files
-/.depend
-/.depend.extr
 /compcert.ini
 /compcert.config
 /x86/ConstpropOp.v
