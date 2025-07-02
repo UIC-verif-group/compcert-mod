@@ -49,7 +49,6 @@ let process_c_file sourcename =
   ExportClight.print_program (Format.formatter_of_out_channel oc)
                              clight sourcename !option_normalize;
   close_out oc
-  compile_c_file sourcename preproname ofile
 
 let usage_string =
   version_string tool_name ^

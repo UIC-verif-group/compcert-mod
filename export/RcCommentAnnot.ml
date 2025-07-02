@@ -12,7 +12,7 @@ type t =
   ; proof_imports : (string * string) list
   ; code_imports  : (string * string) list
   ; context       : string list
-  ; typedefs      : RcAnnot.typedef list }
+  ; typedefs      : RcDefn.typedef list }
 
 type annot_line =
   | AL_annot of string * string option
@@ -49,12 +49,12 @@ let read_import : string -> (string * string * where) option = fun s ->
   try Scanf.sscanf s "%s from %s %!" (k Default)
   with End_of_file | Scanf.Scan_failure(_) -> None
 
-let read_typedef : string -> RcAnnot.typedef option = fun s ->
+let read_typedef : string -> RcDefn.typedef option = fun s ->
   let open Earley in
-  let parse_string = Earley.parse_string RcAnnot.typedef Blanks.default in
+  let parse_string = Earley.parse_string RcDefn.typedef Blanks.default in
   try Some(parse_string s) with Earley.Parse_error(_,_) -> None
 
-let parse_annots : string list -> t = fun ls ->
+let parse : string list -> t = fun ls ->
   let error s =
     Diagnostics.fatal_error no_loc "Comment annotation error: %s" s
   in

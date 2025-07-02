@@ -94,6 +94,7 @@ let preprocessed_file ?(unblock = false)
   |> check_preprocessed name
   |> check_errors
   |> Timing.time2 "Parsing" parse_string name
+  |> Timing.time "RefinedC" RcAnnot.integrate
   |> Timing.time "Elaboration" Elab.elab_file
   |> check_errors
   |> Timing.time "Emulations"

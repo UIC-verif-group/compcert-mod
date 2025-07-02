@@ -1,5 +1,5 @@
 open Earley
-open Extra
+open RcExtra
 
 (** {3 Combinators and utilities} *)
 
