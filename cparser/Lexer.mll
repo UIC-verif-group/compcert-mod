@@ -336,6 +336,8 @@ let octal_escape_sequence =
 let hexadecimal_escape_sequence = "\\x" (hexadecimal_digit+ as n)
 
 rule initial = parse
+  | "[["                          { let s = attribute_contents lexbuf.lex_start_p lexbuf in 
+                                    RCATTR (s, currentLoc lexbuf) }
   | '\n'                          { new_line lexbuf; initial_linebegin lexbuf }
   | whitespace_char_no_newline +  { initial lexbuf }
   | "/*"                          { multiline_comment lexbuf; initial lexbuf }
@@ -430,6 +432,11 @@ and initial_linebegin = parse
   | whitespace_char_no_newline    { initial_linebegin lexbuf }
   | '#'                           { hash lexbuf }
   | ""                            { initial lexbuf }
+
+and attribute_contents startp = parse
+  | "]]"                          { lexbuf.lex_start_p <- startp; Lexing.lexeme lexbuf }
+  | eof                           { fatal_error lexbuf "unterminated custom attribute" }
+  | _                             { attribute_contents startp lexbuf }
 
 and char = parse
   | universal_character_name
@@ -721,6 +728,7 @@ and singleline_comment = parse
       | Pre_parser.ALIGNAS loc -> loop (Parser.ALIGNAS loc)
       | Pre_parser.ALIGNOF loc -> loop (Parser.ALIGNOF loc)
       | Pre_parser.ATTRIBUTE loc -> loop (Parser.ATTRIBUTE loc)
+      | Pre_parser.RCATTR (s, loc) -> loop (Parser.RCATTR (s, loc))
       | Pre_parser.ASM loc -> loop (Parser.ASM loc)
       | Pre_parser.PRAGMA (s, loc) -> loop (Parser.PRAGMA (s, loc))
       | Pre_parser.PRE_NAME _ -> assert false

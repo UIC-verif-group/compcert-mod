@@ -176,6 +176,7 @@ with attribute :=
   | GCC_ATTR : list gcc_attribute -> loc -> attribute
   | PACKED_ATTR : list expression -> loc -> attribute
   | ALIGNAS_ATTR : list expression -> loc -> attribute
+  | RC_ATTR : string -> loc -> attribute
 
 with gcc_attribute :=
   | GCC_ATTR_EMPTY
@@ -237,6 +238,7 @@ with statement :=
  | GOTO : string -> loc -> statement
  | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
+ | RC_STMT : string -> loc -> statement
 
 with for_clause :=
  | FC_EXP : expression -> for_clause

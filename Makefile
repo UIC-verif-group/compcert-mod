@@ -232,7 +232,7 @@ ifeq ($(HAS_RUNTIME_LIB),true)
 	$(MAKE) runtime
 endif
 ifeq ($(CLIGHTGEN),true)
-	$(MAKE) clightgen
+	$(MAKE) clightgen rcvstgen
 endif
 ifeq ($(INSTALL_COQDEV),true)
 	$(MAKE) compcert.config
@@ -261,9 +261,9 @@ ccomp.byte: .depend.extr compcert.ini driver/Version.ml FORCE
 	$(MAKE) -f Makefile.extr ccomp.byte
 
 clightgen: .depend.extr compcert.ini driver/Version.ml FORCE
-	$(MAKE) -f Makefile.extr clightgen
+	$(MAKE) -f Makefile.extr clightgen rcvstgen
 clightgen.byte: .depend.extr compcert.ini driver/Version.ml FORCE
-	$(MAKE) -f Makefile.extr clightgen.byte
+	$(MAKE) -f Makefile.extr clightgen.byte rcvstgen.byte
 
 runtime:
 	$(MAKE) -C runtime
@@ -368,6 +368,7 @@ install:
 	$(MAKE) -C runtime install
 ifeq ($(CLIGHTGEN),true)
 	install -m 0755 ./clightgen $(DESTDIR)$(BINDIR)
+  install -m 0755 ./rcvstgen $(DESTDIR)$(BINDIR)
 endif
 ifeq ($(INSTALL_COQDEV),true)
 	install -d $(DESTDIR)$(COQDEVDIR)

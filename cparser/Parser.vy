@@ -23,7 +23,7 @@ Require Cabs.
 %}
 
 %token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
-%token<Cabs.string * Cabs.loc> PRAGMA
+%token<Cabs.string * Cabs.loc> PRAGMA RCATTR
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -586,6 +586,8 @@ attribute_specifier:
     { (Cabs.ALIGNAS_ATTR (rev' args) loc, loc) }
 | loc = ALIGNAS LPAREN typ = type_name RPAREN
     { (Cabs.ALIGNAS_ATTR [Cabs.ALIGNOF typ] loc, loc) }
+| v = RCATTR
+    { (Cabs.RC_ATTR (fst v, snd v), snd v) }
 
 gcc_attribute_list:
 | a = gcc_attribute
@@ -881,6 +883,8 @@ block_item:
 (* Non-standard *)
 | p = PRAGMA
     { Cabs.DEFINITION (Cabs.PRAGMA (fst p) (snd p)) }
+| v = RCATTR 
+    { Cabs.RC_STMT (fst v, snd v)}
 
 (* 6.8.3 *)
 expression_statement:
