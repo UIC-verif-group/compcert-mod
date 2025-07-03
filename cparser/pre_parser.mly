@@ -835,7 +835,7 @@ block_item:
 | declaration(block_item)
 | statement
 | PRAGMA
-| RCATTR
+| RCATTR SEMICOLON
     {}
 
 expression_statement:

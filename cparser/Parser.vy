@@ -587,7 +587,7 @@ attribute_specifier:
 | loc = ALIGNAS LPAREN typ = type_name RPAREN
     { (Cabs.ALIGNAS_ATTR [Cabs.ALIGNOF typ] loc, loc) }
 | v = RCATTR
-    { (Cabs.RC_ATTR (fst v, snd v), snd v) }
+    { (Cabs.RC_ATTR (fst v) (snd v), snd v) }
 
 gcc_attribute_list:
 | a = gcc_attribute
@@ -883,8 +883,8 @@ block_item:
 (* Non-standard *)
 | p = PRAGMA
     { Cabs.DEFINITION (Cabs.PRAGMA (fst p) (snd p)) }
-| v = RCATTR 
-    { Cabs.RC_STMT (fst v, snd v)}
+| v = RCATTR SEMICOLON
+    { Cabs.RC_STMT (fst v) (snd v) }
 
 (* 6.8.3 *)
 expression_statement:
