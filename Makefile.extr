@@ -45,7 +45,7 @@ cparser/pre_parser_messages.ml:
 
 DIRS=extraction \
   lib common $(ARCH) backend cfrontend cparser driver \
-  export earley debug
+  export debug
 
 INCLUDES=$(patsubst %,-I %, $(DIRS))
 
