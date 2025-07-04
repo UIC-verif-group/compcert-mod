@@ -22,6 +22,7 @@ Parameter string : Type.
 Parameter char_code : Type.
 (* Context information. *)
 Parameter loc : Type.
+Parameter rc_anno : Type.
 
 Record floatInfo := {
   isHex_FI:bool;
@@ -176,7 +177,7 @@ with attribute :=
   | GCC_ATTR : list gcc_attribute -> loc -> attribute
   | PACKED_ATTR : list expression -> loc -> attribute
   | ALIGNAS_ATTR : list expression -> loc -> attribute
-  | RC_ATTR : string -> loc -> attribute
+  | RC_ATTR : rc_anno -> loc -> attribute
 
 with gcc_attribute :=
   | GCC_ATTR_EMPTY
@@ -238,7 +239,7 @@ with statement :=
  | GOTO : string -> loc -> statement
  | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
- | RC_STMT : string -> loc -> statement
+ | RC_STMT : rc_anno -> loc -> statement
 
 with for_clause :=
  | FC_EXP : expression -> for_clause

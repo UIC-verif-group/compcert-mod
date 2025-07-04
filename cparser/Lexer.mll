@@ -265,6 +265,37 @@ let identifier_nondigit =
 
 let identifier = identifier_nondigit (identifier_nondigit|digit)*
 
+let rc_decl = 
+  | "parameters"
+  | "refined_by"
+  | "typedef"
+  | "size"
+  | "exists"
+  | "let"
+  | "constraints"
+  | "immovable"
+  | "tagged_union"
+  | "union_tag"
+  | "field"
+  | "global"
+  | "args"
+  | "requires"
+  | "returns"
+  | "ensures"
+  | "annot"
+  | "asrt"
+  | "inv_vars"
+  | "annot_args"
+  | "tactics"
+  | "lemmas"
+  | "trust_me"
+  | "skip"
+  | "manual_proof"
+  | "block"
+  | "full_block"
+  | "inlined"
+  | "unfold_order"
+
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
 
@@ -336,8 +367,12 @@ let octal_escape_sequence =
 let hexadecimal_escape_sequence = "\\x" (hexadecimal_digit+ as n)
 
 rule initial = parse
-  | "[["                          { let s = attribute_contents lexbuf.lex_start_p lexbuf in 
-                                    RCATTR (s, currentLoc lexbuf) }
+  | "[[rc::" (rc_decl as f) "(\"" { let start_p = lexbuf.lex_start_p in 
+                                    let x = string_literal lexbuf.lex_curr_p Cabs.EncNone [] lexbuf in
+                                    let xs = rc_rest [x] lexbuf in 
+                                    let a = RcLexer.from_raw f xs in
+                                    let lexbuf.lex_start_p <- start_p in
+                                    RCATTR (a, currentLoc lexbuf) }
   | '\n'                          { new_line lexbuf; initial_linebegin lexbuf }
   | whitespace_char_no_newline +  { initial lexbuf }
   | "/*"                          { multiline_comment lexbuf; initial lexbuf }
@@ -433,10 +468,11 @@ and initial_linebegin = parse
   | '#'                           { hash lexbuf }
   | ""                            { initial lexbuf }
 
-and attribute_contents startp = parse
-  | "]]"                          { lexbuf.lex_start_p <- startp; Lexing.lexeme lexbuf }
-  | eof                           { fatal_error lexbuf "unterminated custom attribute" }
-  | _                             { attribute_contents startp lexbuf }
+and rc_rest args = parse
+  | "," whitespace_char_no_newline * "\""  
+                                  { let arg = string_literal lexbuf.lex_curr_p Cabs.EncNone [] lexbuf in 
+                                    rc_rest (arg :: args) lexbuf }
+  | ")]]"                         { List.rev args }
 
 and char = parse
   | universal_character_name
@@ -728,7 +764,7 @@ and singleline_comment = parse
       | Pre_parser.ALIGNAS loc -> loop (Parser.ALIGNAS loc)
       | Pre_parser.ALIGNOF loc -> loop (Parser.ALIGNOF loc)
       | Pre_parser.ATTRIBUTE loc -> loop (Parser.ATTRIBUTE loc)
-      | Pre_parser.RCATTR (s, loc) -> loop (Parser.RCATTR (s, loc))
+      | Pre_parser.RCANNO (a, loc) -> loop (Parser.RCANNO (a, loc))
       | Pre_parser.ASM loc -> loop (Parser.ASM loc)
       | Pre_parser.PRAGMA (s, loc) -> loop (Parser.PRAGMA (s, loc))
       | Pre_parser.PRE_NAME _ -> assert false

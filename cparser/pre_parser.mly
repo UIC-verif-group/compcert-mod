@@ -48,7 +48,8 @@
   VAR_NAME TYPEDEF_NAME
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
-%token<string * Cabs.loc> PRAGMA RCATTR
+%token<RcAnno.t * Cabs.loc> RCANNO
+%token<string * Cabs.loc> PRAGMA
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
   COLON AND MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN LEFT_ASSIGN
@@ -602,7 +603,7 @@ attribute_specifier:
 | PACKED LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN type_name RPAREN
-| RCATTR
+| RCANNO
     {}
 
 gcc_attribute_list:
@@ -835,7 +836,7 @@ block_item:
 | declaration(block_item)
 | statement
 | PRAGMA
-| RCATTR SEMICOLON
+| RCANNO SEMICOLON
     {}
 
 expression_statement:
