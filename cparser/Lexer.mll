@@ -265,36 +265,38 @@ let identifier_nondigit =
 
 let identifier = identifier_nondigit (identifier_nondigit|digit)*
 
-let rc_decl = 
-  | "parameters"
-  | "refined_by"
-  | "typedef"
-  | "size"
-  | "exists"
-  | "let"
-  | "constraints"
-  | "immovable"
-  | "tagged_union"
-  | "union_tag"
-  | "field"
-  | "global"
-  | "args"
-  | "requires"
-  | "returns"
-  | "ensures"
-  | "annot"
-  | "asrt"
-  | "inv_vars"
-  | "annot_args"
-  | "tactics"
-  | "lemmas"
-  | "trust_me"
-  | "skip"
-  | "manual_proof"
-  | "block"
-  | "full_block"
-  | "inlined"
-  | "unfold_order"
+let rc_decl_many_arg = parse
+  | "parameters"     { RcAnno.Parameters (currentLoc lexbuf) }
+  | "refined_by"     { RcAnno.Refined_by (currentLoc lexbuf) }
+  | "exists"         { RcAnno.Exists (currentLoc lexbuf) }
+  | "let"            { RcAnno.Let (currentLoc lexbuf) }
+  | "constraints"    { RcAnno.Constraints (currentLoc lexbuf) }
+  | "args"           { RcAnno.Args (currentLoc lexbuf) }
+  | "requires"       { RcAnno.Requires (currentLoc lexbuf) }
+  | "ensures"        { RcAnno.Ensures (currentLoc lexbuf) }
+  | "inv_vars"       { RcAnno.Inv_vars (currentLoc lexbuf) }
+  | "annot_args"     { RcAnno.Annot_args (currentLoc lexbuf) }
+  | "tactics"        { RcAnno.Tactics (currentLoc lexbuf) }
+  | "lemmas"         { RcAnno.Lemmas (currentLoc lexbuf) }
+let rc_decl_one_arg = parse
+  | "typedef"        { RcAnno.Typedef (currentLoc lexbuf) }
+  | "size"           { RcAnno.Size (currentLoc lexbuf) }
+  | "tagged_union"   { RcAnno.Tagged_union (currentLoc lexbuf) }
+  | "union_tag"      { RcAnno.Union_tag (currentLoc lexbuf) }
+  | "field"          { RcAnno.Field (currentLoc lexbuf) }
+  | "global"         { RcAnno.Global (currentLoc lexbuf) }
+  | "returns"        { RcAnno.Returns (currentLoc lexbuf) }
+  | "manual_proof"   { RcAnno.Manual_proof (currentLoc lexbuf) }
+  | "annot"          { RcAnno.Annot (currentLoc lexbuf) }
+  | "unfold_order"   { RcAnno.Unfold_order (currentLoc lexbuf) }
+let rc_decl_zero_arg = parse
+  | "immovable"      { RcAnno.Immovable (currentLoc lexbuf) }
+  | "asrt"           { RcAnno.Asrt (currentLoc lexbuf) }
+  | "trust_me"       { RcAnno.Trust_me (currentLoc lexbuf) }
+  | "skip"           { RcAnno.Skip (currentLoc lexbuf) }
+  | "block"          { RcAnno.Block (currentLoc lexbuf) }
+  | "full_block"     { RcAnno.Full_block (currentLoc lexbuf) }
+  | "inlined"        { RcAnno.Inlined (currentLoc lexbuf) }
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
@@ -367,12 +369,8 @@ let octal_escape_sequence =
 let hexadecimal_escape_sequence = "\\x" (hexadecimal_digit+ as n)
 
 rule initial = parse
-  | "[[rc::" (rc_decl as f) "(\"" { let start_p = lexbuf.lex_start_p in 
-                                    let x = string_literal lexbuf.lex_curr_p Cabs.EncNone [] lexbuf in
-                                    let xs = rc_rest [x] lexbuf in 
-                                    let a = RcLexer.from_raw f xs in
-                                    let lexbuf.lex_start_p <- start_p in
-                                    RCATTR (a, currentLoc lexbuf) }
+  | "[[rc::"                      { let loc = currentLoc lexbuf in 
+                                    RCATTR (rc_decl lexbuf, loc) }
   | '\n'                          { new_line lexbuf; initial_linebegin lexbuf }
   | whitespace_char_no_newline +  { initial lexbuf }
   | "/*"                          { multiline_comment lexbuf; initial lexbuf }
@@ -468,11 +466,32 @@ and initial_linebegin = parse
   | '#'                           { hash lexbuf }
   | ""                            { initial lexbuf }
 
+and rc_decl = parse 
+  | rc_decl_zero_arg as decl      { rc_clos_end decl RcAnno.Zero lexbuf }
+  | (rc_decl_one_arg as decl) "(\""
+                                  { let x = string_literal lexbuf.lex_curr_p 
+                                              Cabs.EncNone [] lexbuf in
+                                    let loc = currentLoc lexbuf in 
+                                    rc_open_end decl (RcAnno.One (loc, x)) 
+                                        lexbuf }
+  | (rc_decl_many_arg as decl) "(\""
+                                  { let x = string_literal lexbuf.lex_curr_p 
+                                              Cabs.EncNone [] lexbuf in
+                                    let loc = currentLoc lexbuf in
+                                    let args = rc_rest [(loc, x)] lexbuf in 
+                                    rc_open_end decl args lexbuf }
 and rc_rest args = parse
   | "," whitespace_char_no_newline * "\""  
-                                  { let arg = string_literal lexbuf.lex_curr_p Cabs.EncNone [] lexbuf in 
-                                    rc_rest (arg :: args) lexbuf }
-  | ")]]"                         { List.rev args }
+                                  { let x = string_literal lexbuf.lex_curr_p 
+                                              Cabs.EncNone [] lexbuf in
+                                    let loc = currentLoc lexbuf in 
+                                    rc_rest ((loc, x) :: args) lexbuf }
+  | ""                            { RcAnno.Many (List.rev args) }
+
+and rc_open_end decl args = parse 
+  | ")"                           { rc_clos_end decl args lexbuf }
+and rc_clos_end decl args = parse
+  | "]]"                          { RcAnno.annot decl args }
 
 and char = parse
   | universal_character_name
