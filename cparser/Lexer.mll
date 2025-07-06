@@ -20,6 +20,8 @@ open Lexing
 open Pre_parser
 open Pre_parser_aux
 
+module Rc_pp_aux = Rc_pre_parser_aux
+
 module SSet = Set.Make(String)
 
 let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
@@ -185,13 +187,15 @@ let combine_encodings loc e1 e2 =
 
 type chr = Chr of int | Esc of int64
 
-let check_utf8 lexbuf min x =
-  if x > 0x10FFFF || (x >= 0xD800 && x <= 0xDFFF) then
+let utf8_check lexbuf min x = 
+  if x > 0x10FFFF || (x >= 0xD800 && x <= 0xDFFF) then 
     warning lexbuf Diagnostics.Invalid_UTF8 "Wrong Unicode value U+%X" x;
-  if x < min then
+  if x < min then 
     warning lexbuf Diagnostics.Invalid_UTF8
-            "Overlong UTF-8 encoding for Unicode value U+%X" x;
-  Chr x
+            "Overlong UTF-8 encoding for Unicode value U+%X" x
+
+let check_utf8 lexbuf min x = begin 
+  utf8_check lexbuf min x; Chr x end
 
 let check_universal_character lexbuf x =
   if x > 0x10FFFF
@@ -245,6 +249,29 @@ let add_char enc c accu =
       if Cutil.sizeof_ikind (Cutil.wchar_ikind ()) = 2
       then add_char_utf16 x accu
       else Int64.of_int x :: accu
+
+let extend_dbl cur max buf nw = 
+  let (max, buf) = if max - cur < nw then begin 
+    let max_lng = max * 2 in 
+    let buf_lng = Bytes.create max_lng in 
+    Bytes.blit buf 0 buf_lng 0 cur;
+    (max_lng, buf_lng) end else
+    (max, buf) in 
+  (max, buf)
+
+let write_n cur max buf cs =
+  let nw = List.length cs in 
+  let (max, buf) = extend_dbl cur max buf nw in 
+  let rec go i = function 
+  | c :: rest -> begin
+    Bytes.set buf i c;
+    go (i + 1) rest end
+  | [] -> 
+    i 
+  in
+  let cur = go cur cs in 
+  (cur, max, buf)
+    
 }
 
 (* Identifiers *)
@@ -266,37 +293,37 @@ let identifier_nondigit =
 let identifier = identifier_nondigit (identifier_nondigit|digit)*
 
 let rc_decl_many_arg = parse
-  | "parameters"     { RcAnno.Parameters (currentLoc lexbuf) }
-  | "refined_by"     { RcAnno.Refined_by (currentLoc lexbuf) }
-  | "exists"         { RcAnno.Exists (currentLoc lexbuf) }
-  | "let"            { RcAnno.Let (currentLoc lexbuf) }
-  | "constraints"    { RcAnno.Constraints (currentLoc lexbuf) }
-  | "args"           { RcAnno.Args (currentLoc lexbuf) }
-  | "requires"       { RcAnno.Requires (currentLoc lexbuf) }
-  | "ensures"        { RcAnno.Ensures (currentLoc lexbuf) }
-  | "inv_vars"       { RcAnno.Inv_vars (currentLoc lexbuf) }
-  | "annot_args"     { RcAnno.Annot_args (currentLoc lexbuf) }
-  | "tactics"        { RcAnno.Tactics (currentLoc lexbuf) }
-  | "lemmas"         { RcAnno.Lemmas (currentLoc lexbuf) }
+  | "parameters"     { Rc_pp_aux.Parameters (currentLoc lexbuf) }
+  | "refined_by"     { Rc_pp_aux.Refined_by (currentLoc lexbuf) }
+  | "exists"         { Rc_pp_aux.Exists (currentLoc lexbuf) }
+  | "let"            { Rc_pp_aux.Let (currentLoc lexbuf) }
+  | "constraints"    { Rc_pp_aux.Constraints (currentLoc lexbuf) }
+  | "args"           { Rc_pp_aux.Args (currentLoc lexbuf) }
+  | "requires"       { Rc_pp_aux.Requires (currentLoc lexbuf) }
+  | "ensures"        { Rc_pp_aux.Ensures (currentLoc lexbuf) }
+  | "inv_vars"       { Rc_pp_aux.Inv_vars (currentLoc lexbuf) }
+  | "annot_args"     { Rc_pp_aux.Annot_args (currentLoc lexbuf) }
+  | "tactics"        { Rc_pp_aux.Tactics (currentLoc lexbuf) }
+  | "lemmas"         { Rc_pp_aux.Lemmas (currentLoc lexbuf) }
 let rc_decl_one_arg = parse
-  | "typedef"        { RcAnno.Typedef (currentLoc lexbuf) }
-  | "size"           { RcAnno.Size (currentLoc lexbuf) }
-  | "tagged_union"   { RcAnno.Tagged_union (currentLoc lexbuf) }
-  | "union_tag"      { RcAnno.Union_tag (currentLoc lexbuf) }
-  | "field"          { RcAnno.Field (currentLoc lexbuf) }
-  | "global"         { RcAnno.Global (currentLoc lexbuf) }
-  | "returns"        { RcAnno.Returns (currentLoc lexbuf) }
-  | "manual_proof"   { RcAnno.Manual_proof (currentLoc lexbuf) }
-  | "annot"          { RcAnno.Annot (currentLoc lexbuf) }
-  | "unfold_order"   { RcAnno.Unfold_order (currentLoc lexbuf) }
+  | "typedef"        { Rc_pp_aux.Typedef (currentLoc lexbuf) }
+  | "size"           { Rc_pp_aux.Size (currentLoc lexbuf) }
+  | "tagged_union"   { Rc_pp_aux.Tagged_union (currentLoc lexbuf) }
+  | "union_tag"      { Rc_pp_aux.Union_tag (currentLoc lexbuf) }
+  | "field"          { Rc_pp_aux.Field (currentLoc lexbuf) }
+  | "global"         { Rc_pp_aux.Global (currentLoc lexbuf) }
+  | "returns"        { Rc_pp_aux.Returns (currentLoc lexbuf) }
+  | "manual_proof"   { Rc_pp_aux.Manual_proof (currentLoc lexbuf) }
+  | "annot"          { Rc_pp_aux.Annot (currentLoc lexbuf) }
+  | "unfold_order"   { Rc_pp_aux.Unfold_order (currentLoc lexbuf) }
 let rc_decl_zero_arg = parse
-  | "immovable"      { RcAnno.Immovable (currentLoc lexbuf) }
-  | "asrt"           { RcAnno.Asrt (currentLoc lexbuf) }
-  | "trust_me"       { RcAnno.Trust_me (currentLoc lexbuf) }
-  | "skip"           { RcAnno.Skip (currentLoc lexbuf) }
-  | "block"          { RcAnno.Block (currentLoc lexbuf) }
-  | "full_block"     { RcAnno.Full_block (currentLoc lexbuf) }
-  | "inlined"        { RcAnno.Inlined (currentLoc lexbuf) }
+  | "immovable"      { Rc_pp_aux.Immovable (currentLoc lexbuf) }
+  | "asrt"           { Rc_pp_aux.Asrt (currentLoc lexbuf) }
+  | "trust_me"       { Rc_pp_aux.Trust_me (currentLoc lexbuf) }
+  | "skip"           { Rc_pp_aux.Skip (currentLoc lexbuf) }
+  | "block"          { Rc_pp_aux.Block (currentLoc lexbuf) }
+  | "full_block"     { Rc_pp_aux.Full_block (currentLoc lexbuf) }
+  | "inlined"        { Rc_pp_aux.Inlined (currentLoc lexbuf) }
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
@@ -467,7 +494,7 @@ and initial_linebegin = parse
   | ""                            { initial lexbuf }
 
 and rc_decl = parse 
-  | rc_decl_zero_arg as decl      { rc_clos_end decl RcAnno.Zero lexbuf }
+  | rc_decl_zero_arg as decl      { rc_clos_end decl Rc_pp_aux.Zero lexbuf }
   | (rc_decl_one_arg as decl) "(\""
                                   { let s = 
                                       let n = 100 in 
@@ -476,7 +503,7 @@ and rc_decl = parse
                                         0 n buf lexbuf 
                                     in
                                     let loc = currentLoc lexbuf in 
-                                    rc_open_end decl (RcAnno.One (loc, s)) 
+                                    rc_open_end decl (Rc_pp_aux.One (loc, s)) 
                                         lexbuf }
   | (rc_decl_many_arg as decl) "(\""
                                   { let s = 
@@ -493,17 +520,17 @@ and rc_rest args = parse
                                   { let s = 
                                       let n = 100 in 
                                       let buf = Bytes.create n in 
-                                      string_literal lexbuf.lex_curr_p 
+                                      string_literal_noconv lexbuf.lex_curr_p 
                                         0 n buf lexbuf 
                                     in
                                     let loc = currentLoc lexbuf in 
                                     rc_rest ((loc, s) :: args) lexbuf }
-  | ""                            { RcAnno.Many (List.rev args) }
+  | ""                            { Rc_pp_aux.Many (List.rev args) }
 
 and rc_open_end decl args = parse 
   | ")"                           { rc_clos_end decl args lexbuf }
 and rc_clos_end decl args = parse
-  | "]]"                          { RcAnno.annot decl args }
+  | "]]"                          { RcLexer.annot decl args }
 
 and char = parse
   | universal_character_name
@@ -555,27 +582,28 @@ and char = parse
 
 and char_noconv cur max buf = parse
   | ['\x00'-'\x7F'] as c1
-      { Chr (Char.code c1) }
+      { write_n cur max buf [c1] }
   | (['\xC0'-'\xDF'] as c1) (['\x80'-'\xBF'] as c2)
-      { check_utf8 lexbuf 0x80
-          ( (Char.code c1 land 0b00011111) lsl 6
-          + (Char.code c2 land 0b00111111)) }
+      { let i = (Char.code c1 land 0b00011111) lsl 6 + 
+                (Char.code c2 land 0b00111111) in 
+        utf8_check lexbuf 0x80 i;
+        write_n cur max buf [c1; c2] }
   | (['\xE0'-'\xEF'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3)
-      { check_utf8 lexbuf 0x800
-          ( (Char.code c1 land 0b00001111) lsl 12
-          + (Char.code c2 land 0b00111111) lsl 6
-          + (Char.code c3 land 0b00111111) ) }
+      { let i = (Char.code c1 land 0b00001111) lsl 12 +
+                (Char.code c2 land 0b00111111) lsl 6 + 
+                (Char.code c3 land 0b00111111) in 
+        utf8_check lexbuf 0x800 i;
+        write_n cur max buf [c1; c2; c3] }
   | (['\xF0'-'\xF7'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3) (['\x80'-'\xBF'] as c4)
-     { check_utf8 lexbuf 0x10000
-          ( (Char.code c1 land 0b00000111) lsl 18
-          + (Char.code c2 land 0b00111111) lsl 12
-          + (Char.code c3 land 0b00111111) lsl 6
-          + (Char.code c4 land 0b00111111) ) }
+      { let i = (Char.code c1 land 0b00000111) lsl 18 + 
+                (Char.code c2 land 0b00111111) lsl 12 + 
+                (Char.code c3 land 0b00111111) lsl 6 + 
+                (Char.code c4 land 0b00111111) in
+        utf8_check lexbuf 0x800 i;
+        write_n cur max buf [c1; c2; c3; c4] }
   | _ as c
-     { warning lexbuf Diagnostics.Invalid_UTF8
-               "Invalid UTF8 encoding: byte 0x%02x" (Char.code c);
-       Esc (Int64.of_int (Char.code c)) (* re-encode as-is *)
-     }
+     { fatal_error lexbuf Diagnostics.Invalid_UTF8
+          "Invalid UTF8 encoding: byte 0x%02x" (Char.code c) }
 
 and char_literal startp accu = parse
   | '\''       { lexbuf.lex_start_p <- startp;
@@ -591,11 +619,10 @@ and string_literal startp enc accu = parse
 
 and string_literal_noconv startp cur max buf = parse
   | '\"'       { lexbuf.lex_start_p <- startp;
-                 Bytes.to_string buf }
+                 Bytes.sub_string buf 0 cur }
   | '\n' | eof { fatal_error lexbuf "missing terminating '\"' character" }
-  | ""         { let (cur, max, buf) = 
-                   char_noconv cur max buf lexbuf 
-                 in string_literal_noconv startp cur max buf lexbuf }
+  | ""         { let (cur, max, buf) = char_noconv cur max buf lexbuf in
+                 string_literal_noconv startp cur max buf lexbuf }
 
 (* We assume gcc -E syntax but try to tolerate variations. *)
 and hash = parse
