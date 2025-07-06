@@ -469,23 +469,35 @@ and initial_linebegin = parse
 and rc_decl = parse 
   | rc_decl_zero_arg as decl      { rc_clos_end decl RcAnno.Zero lexbuf }
   | (rc_decl_one_arg as decl) "(\""
-                                  { let x = string_literal lexbuf.lex_curr_p 
-                                              Cabs.EncNone [] lexbuf in
+                                  { let s = 
+                                      let n = 100 in 
+                                      let buf = Bytes.create n in 
+                                      string_literal_noconv lexbuf.lex_curr_p 
+                                        0 n buf lexbuf 
+                                    in
                                     let loc = currentLoc lexbuf in 
-                                    rc_open_end decl (RcAnno.One (loc, x)) 
+                                    rc_open_end decl (RcAnno.One (loc, s)) 
                                         lexbuf }
   | (rc_decl_many_arg as decl) "(\""
-                                  { let x = string_literal lexbuf.lex_curr_p 
-                                              Cabs.EncNone [] lexbuf in
+                                  { let s = 
+                                      let n = 100 in 
+                                      let buf = Bytes.create n in 
+                                      string_literal_noconv lexbuf.lex_curr_p 
+                                        0 n buf lexbuf
+                                    in
                                     let loc = currentLoc lexbuf in
-                                    let args = rc_rest [(loc, x)] lexbuf in 
+                                    let args = rc_rest [(loc, s)] lexbuf in 
                                     rc_open_end decl args lexbuf }
 and rc_rest args = parse
   | "," whitespace_char_no_newline * "\""  
-                                  { let x = string_literal lexbuf.lex_curr_p 
-                                              Cabs.EncNone [] lexbuf in
+                                  { let s = 
+                                      let n = 100 in 
+                                      let buf = Bytes.create n in 
+                                      string_literal lexbuf.lex_curr_p 
+                                        0 n buf lexbuf 
+                                    in
                                     let loc = currentLoc lexbuf in 
-                                    rc_rest ((loc, x) :: args) lexbuf }
+                                    rc_rest ((loc, s) :: args) lexbuf }
   | ""                            { RcAnno.Many (List.rev args) }
 
 and rc_open_end decl args = parse 
@@ -541,6 +553,30 @@ and char = parse
        Esc (Int64.of_int (Char.code c)) (* re-encode as-is *)
      }
 
+and char_noconv cur max buf = parse
+  | ['\x00'-'\x7F'] as c1
+      { Chr (Char.code c1) }
+  | (['\xC0'-'\xDF'] as c1) (['\x80'-'\xBF'] as c2)
+      { check_utf8 lexbuf 0x80
+          ( (Char.code c1 land 0b00011111) lsl 6
+          + (Char.code c2 land 0b00111111)) }
+  | (['\xE0'-'\xEF'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3)
+      { check_utf8 lexbuf 0x800
+          ( (Char.code c1 land 0b00001111) lsl 12
+          + (Char.code c2 land 0b00111111) lsl 6
+          + (Char.code c3 land 0b00111111) ) }
+  | (['\xF0'-'\xF7'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3) (['\x80'-'\xBF'] as c4)
+     { check_utf8 lexbuf 0x10000
+          ( (Char.code c1 land 0b00000111) lsl 18
+          + (Char.code c2 land 0b00111111) lsl 12
+          + (Char.code c3 land 0b00111111) lsl 6
+          + (Char.code c4 land 0b00111111) ) }
+  | _ as c
+     { warning lexbuf Diagnostics.Invalid_UTF8
+               "Invalid UTF8 encoding: byte 0x%02x" (Char.code c);
+       Esc (Int64.of_int (Char.code c)) (* re-encode as-is *)
+     }
+
 and char_literal startp accu = parse
   | '\''       { lexbuf.lex_start_p <- startp;
                  List.rev accu }
@@ -552,6 +588,14 @@ and string_literal startp enc accu = parse
                  List.rev accu }
   | '\n' | eof { fatal_error lexbuf "missing terminating '\"' character" }
   | ""         { let c = char lexbuf in string_literal startp enc (add_char enc c accu) lexbuf }
+
+and string_literal_noconv startp cur max buf = parse
+  | '\"'       { lexbuf.lex_start_p <- startp;
+                 Bytes.to_string buf }
+  | '\n' | eof { fatal_error lexbuf "missing terminating '\"' character" }
+  | ""         { let (cur, max, buf) = 
+                   char_noconv cur max buf lexbuf 
+                 in string_literal_noconv startp cur max buf lexbuf }
 
 (* We assume gcc -E syntax but try to tolerate variations. *)
 and hash = parse
