@@ -292,38 +292,40 @@ let identifier_nondigit =
 
 let identifier = identifier_nondigit (identifier_nondigit|digit)*
 
-let rc_decl_many_arg = parse
-  | "parameters"     { Rc_pp_aux.Parameters (currentLoc lexbuf) }
-  | "refined_by"     { Rc_pp_aux.Refined_by (currentLoc lexbuf) }
-  | "exists"         { Rc_pp_aux.Exists (currentLoc lexbuf) }
-  | "let"            { Rc_pp_aux.Let (currentLoc lexbuf) }
-  | "constraints"    { Rc_pp_aux.Constraints (currentLoc lexbuf) }
-  | "args"           { Rc_pp_aux.Args (currentLoc lexbuf) }
-  | "requires"       { Rc_pp_aux.Requires (currentLoc lexbuf) }
-  | "ensures"        { Rc_pp_aux.Ensures (currentLoc lexbuf) }
-  | "inv_vars"       { Rc_pp_aux.Inv_vars (currentLoc lexbuf) }
-  | "annot_args"     { Rc_pp_aux.Annot_args (currentLoc lexbuf) }
-  | "tactics"        { Rc_pp_aux.Tactics (currentLoc lexbuf) }
-  | "lemmas"         { Rc_pp_aux.Lemmas (currentLoc lexbuf) }
-let rc_decl_one_arg = parse
-  | "typedef"        { Rc_pp_aux.Typedef (currentLoc lexbuf) }
-  | "size"           { Rc_pp_aux.Size (currentLoc lexbuf) }
-  | "tagged_union"   { Rc_pp_aux.Tagged_union (currentLoc lexbuf) }
-  | "union_tag"      { Rc_pp_aux.Union_tag (currentLoc lexbuf) }
-  | "field"          { Rc_pp_aux.Field (currentLoc lexbuf) }
-  | "global"         { Rc_pp_aux.Global (currentLoc lexbuf) }
-  | "returns"        { Rc_pp_aux.Returns (currentLoc lexbuf) }
-  | "manual_proof"   { Rc_pp_aux.Manual_proof (currentLoc lexbuf) }
-  | "annot"          { Rc_pp_aux.Annot (currentLoc lexbuf) }
-  | "unfold_order"   { Rc_pp_aux.Unfold_order (currentLoc lexbuf) }
-let rc_decl_zero_arg = parse
-  | "immovable"      { Rc_pp_aux.Immovable (currentLoc lexbuf) }
-  | "asrt"           { Rc_pp_aux.Asrt (currentLoc lexbuf) }
-  | "trust_me"       { Rc_pp_aux.Trust_me (currentLoc lexbuf) }
-  | "skip"           { Rc_pp_aux.Skip (currentLoc lexbuf) }
-  | "block"          { Rc_pp_aux.Block (currentLoc lexbuf) }
-  | "full_block"     { Rc_pp_aux.Full_block (currentLoc lexbuf) }
-  | "inlined"        { Rc_pp_aux.Inlined (currentLoc lexbuf) }
+let pat_rc_decl_many_arg =
+  ( "parameters"
+  | "refined_by"
+  | "exists"
+  | "let"
+  | "constraints"
+  | "args"
+  | "requires"
+  | "ensures"
+  | "inv_vars"
+  | "annot_args"
+  | "tactics"
+  | "lemmas" ) as decl
+
+let pat_rc_decl_one_arg =
+  ( "typedef"
+  | "size"
+  | "tagged_union"
+  | "union_tag"
+  | "field"
+  | "global"
+  | "returns"
+  | "manual_proof"
+  | "annot"
+  | "unfold_order" ) as decl
+
+let pat_rc_decl_zero_arg =
+  ( "immovable"
+  | "asrt"
+  | "trust_me"
+  | "skip"
+  | "block"
+  | "full_block"
+  | "inlined" ) as decl
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
@@ -494,35 +496,41 @@ and initial_linebegin = parse
   | ""                            { initial lexbuf }
 
 and rc_decl = parse 
-  | rc_decl_zero_arg as decl      { rc_clos_end decl Rc_pp_aux.Zero lexbuf }
-  | (rc_decl_one_arg as decl) "(\""
-                                  { let s = 
+  | pat_rc_decl_zero_arg          { let decl = 
+                                      let to_decl = Rc_pp_aux.decl_of_string decl in
+                                      to_decl (currentLoc lexbuf) in
+                                    let args = Rc_pp_aux.Zero in 
+                                    rc_clos_end decl args lexbuf }
+  | pat_rc_decl_one_arg "(\""
+                                  { let decl = 
+                                      let to_decl = Rc_pp_aux.decl_of_string decl in
+                                      to_decl (currentLoc lexbuf) in
+                                    let args = 
                                       let n = 100 in 
                                       let buf = Bytes.create n in 
-                                      string_literal_noconv lexbuf.lex_curr_p 
-                                        0 n buf lexbuf 
-                                    in
-                                    let loc = currentLoc lexbuf in 
-                                    rc_open_end decl (Rc_pp_aux.One (loc, s)) 
-                                        lexbuf }
-  | (rc_decl_many_arg as decl) "(\""
-                                  { let s = 
+                                      let s = string_literal_noconv lexbuf.lex_curr_p 
+                                                0 n buf lexbuf in 
+                                      let loc = currentLoc lexbuf in 
+                                      Rc_pp_aux.One (loc, s) in 
+                                    rc_open_end decl args lexbuf }
+  | pat_rc_decl_many_arg "(\""
+                                  { let decl = 
+                                      let to_decl = Rc_pp_aux.decl_of_string decl in 
+                                      to_decl (currentLoc lexbuf) in
+                                    let args =
                                       let n = 100 in 
                                       let buf = Bytes.create n in 
-                                      string_literal_noconv lexbuf.lex_curr_p 
-                                        0 n buf lexbuf
-                                    in
-                                    let loc = currentLoc lexbuf in
-                                    let args = rc_rest [(loc, s)] lexbuf in 
+                                      let s = string_literal_noconv lexbuf.lex_curr_p
+                                                0 n buf in 
+                                      let loc = currentLoc lexbuf in 
+                                      rc_rest [(loc, s)] lexbuf in 
                                     rc_open_end decl args lexbuf }
 and rc_rest args = parse
   | "," whitespace_char_no_newline * "\""  
-                                  { let s = 
-                                      let n = 100 in 
-                                      let buf = Bytes.create n in 
-                                      string_literal_noconv lexbuf.lex_curr_p 
-                                        0 n buf lexbuf 
-                                    in
+                                  { let n = 100 in 
+                                    let buf = Bytes.create n in 
+                                    let s = string_literal_noconv lexbuf.lex_curr_p
+                                              0 n buf lexbuf in 
                                     let loc = currentLoc lexbuf in 
                                     rc_rest ((loc, s) :: args) lexbuf }
   | ""                            { Rc_pp_aux.Many (List.rev args) }

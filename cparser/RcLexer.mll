@@ -16,6 +16,20 @@ let currentLoc =
           ; byteno   = p.Lexing.pos_cnum
           ; ident    = getident () })
 
+let fatal_error lb fmt =
+  Diagnostics.fatal_error
+    (lb.lex_curr_p.pos_fname,lb.lex_curr_p.pos_lnum) fmt
+
+module SSet = Set.Make(String)
+
+let lexicon : SSet.t = SSet.of_list [
+                            "global"
+                          ; "own"
+                          ; "shr"
+                          ; "frac" ]
+
+let clash name = SSet.mem name lexicon
+
 }
 
 let udot = 
@@ -24,34 +38,153 @@ let udot =
   | ['\xE0' - '\xEF'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] 
   | ['\xF0' - '\xF7'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] ['\x80' - '\xBF']
 
+let digit = ['0'-'9']
+let nondigit = ['_' 'a'-'z' 'A'-'Z']
+let ident_base = nondigit ( digit | nondigit ) *
+let integer = digit +
 
+rule token = parse
+  | "&" ident_base "*"     { fatal_error lexbuf "invalid RefinedC identifier" }
+  | "&" (ident_base as n)  { if clash n then fatal_error lexbuf 
+                               "reserved keyword used as RefinedC identifier";
+                             Rc_pp.TY_NAME (n, currentLoc lexbuf) }
+  | "void*" as n           { Rc_pp.IDENT (n, currentLoc lexbuf) }
+  | (ident_base as n) "*"  { fatal_error lexbuf "invalid RefinedC identifier" }
+  | ident_base as n        { if clash_n then fatal_error lexbuf 
+                               "reserved keyword used as RefinedC identifier";
+                             Rc_pp.TY_NAME_OR_IDENT (n, currentLoc lexbuf) }
+  | "global"               { Rc_pp.GLOBAL (currentLoc lexbuf) }
+  | "own"                  { Rc_pp.OWN (currentLoc lexbuf) }
+  | "shr"                  { Rc_pp.SHARE (currentLoc lexbuf) }
+  | "frac"                 { Rc_pp.FRAC (currentLoc lexbuf) }
+  | "!{"                   { Rc_pp.LBANGBRACK (currentLoc lexbuf) }
+  | "..."                  { Rc_pp.DOTTHREE (currentLoc lexbuf) }
+  | "."                    { Rc_pp.DOTONE (currentLoc lexbuf) }
+  | "{"                    { Rc_pp.LBRACK (currentLoc lexbuf) }
+  | "}"                    { Rc_pp.RBRACK (currentLoc lexbuf) }
+  | "["                    { Rc_pp.LBRACE (currentLoc lexbuf) }
+  | "]"                    { Rc_pp.RBRACE (currentLoc lexbuf) }
+  | "<"                    { Rc_pp.LANGLE (currentLoc lexbuf) }
+  | ">"                    { Rc_pp.RANGLE (currentLoc lexbuf) }
+  | "@"                    { Rc_pp.AT (currentLoc lexbuf) }
+  | "∃"                    { Rc_pp.EXISTS (currentLoc lexbuf) }
+  | ":"                    { Rc_pp.COLON (currentLoc lexbuf) }
+  | "("                    { Rc_pp.LPAREN (currentLoc lexbuf) }
+  | ")"                    { Rc_pp.RPAREN (currentLoc lexbuf) }
+  | "λ"                    { Rc_pp.LAMBDA (currentLoc lexbuf) }
+  | ","                    { Rc_pp.COMMA (currentLoc lexbuf) }
+  | udot as c              { Rc_pp.UCHAR (c, currentLoc lexbuf) }
+(* 
+rule parameters_anno = parse 
+  | ""                     { let name = ident lexbuf in 
+                             }
 
-rule coq_term = parse 
-  | "{"                    { Rc_pp.LBRACK }
-  | "}"                    { Rc_pp.RBRACK }
-  | "["                    { Rc_pp.LBRACE }
-  | "]"                    { Rc_pp.RBRACE }
-  | "!{"                   { Rc_pp.LBANGBRACK}
-  | 
+rule refined_by_anno = parse 
+| "" {} 
 
+rule exists_anno = parse 
+| "" {} 
+
+rule let_anno = parse 
+| "" {} 
+
+rule constraints_anno = parse 
+| "" {} 
+
+rule args_anno = parse
+| "" {} 
+
+rule requires_anno = parse 
+| "" {} 
+
+rule ensures_anno = parse 
+| "" {} 
+
+rule inv_vars_anno = parse
+| "" {} 
+
+rule annot_args_anno = parse 
+| "" {} 
+
+rule tactics_anno = parse 
+| "" {} 
+
+rule lemmas_anno = parse 
+| "" {} 
+
+rule typedef_anno = parse 
+| "" {} 
+
+rule size_anno = parse 
+| "" {} 
+
+rule tagged_union_anno = parse 
+| "" {} 
+
+rule union_tag_anno = parse 
+| "" {} 
+
+rule field_anno = parse 
+| "" {} 
+
+rule global_anno = parse 
+| "" {} 
+
+rule returns_anno = parse 
+| "" {} 
+
+rule manual_proof_anno = parse 
+| "" {} 
+
+rule annot_anno = parse 
+| "" {} 
+
+rule unfold_order_anno = parse
+| "" {}  *)
 
 {
 
-  let lexer : lexbuf -> Rc_pre_parser.token = 
-    fun lexbuf -> assert false
-
-  let invoke_rc_pre_parser loc text lexer buffer = 
+  let invoke_rc_pre_parser loc text decl buffer = 
     let lexbuf = Lexing.from_string text in 
     lexbuf.lex_curr_p <- 
       { lexbuf.lex_curr_p with 
         pos_fname = loc.filename
       ; pos_lnum = loc.lineno
       ; pos_cnum = loc.byteno };
-    let module I = Rc_pre_parser.MenhirInterpreter in 
-    let checkpoint = Rc_pre_parser.Incremental.arg lexbuf.lex_curr_p 
-    and supplier = I.lexer_lexbuf_to_supplier lexer lexbuf
-    and succeed () = ()
-    and fail checkpoint = 
+    let module I = Rc_pp.MenhirInterpreter in
+    let module M = Rc_pp.Incremental in
+    let (checkpoint, supplier) = 
+      let (lexer, parser) = begin match decl with 
+      | Parameters _   -> (parameters_anno, M.parameters_anno)
+      | Refined_by _   -> (refined_by_anno, M.refined_by_anno)
+      | Exists _       -> (exists_anno, M.exists_anno)
+      | Let _          -> (let_anno, M.let_anno)
+      | Constraints _  -> (constraints_anno, M.constraints_anno)
+      | Args _         -> (args_anno, M.args_anno)
+      | Requires _     -> (requires_anno, M.requires_anno)
+      | Ensures _      -> (ensures_anno, M.ensures_anno)
+      | Inv_vars _     -> (inv_vars_anno, M.inv_vars_anno)
+      | Annot_args _   -> (annot_args_anno, M.annot_args_anno)
+      | Tactics _      -> (tactics_anno, M.tactics_anno)
+      | Lemmas _       -> (lemmas_anno, M.lemmas_anno)
+      | Typedef _      -> (typedef_anno, M.typedef_anno)
+      | Size _         -> (size_anno, M.size_anno)
+      | Tagged_union _ -> (tagged_union_anno, M.tagged_union_anno)
+      | Union_tag _    -> (union_tag_anno, M.union_tag_anno)
+      | Field _        -> (field_anno, M.field_anno)
+      | Global _       -> (global_anno, M.global_anno)
+      | Returns _      -> (returns_anno, M.returns_anno)
+      | Manual_proof _ -> (manual_proof_anno, M.manual_proof_anno)
+      | Annot _        -> (annot_anno, M.annot_anno)
+      | Unfold_order _ -> (unfold_order_anno, M.unfold_order_anno)
+      | Immovable _ | Asrt _ | Trust_me _ | Skip _ 
+      | Block _ | Full_block _ | Inlined _ ->
+        assert false (* cannot be invoked by `annot` *)
+      end in (
+        parser lexbuf.lex_curr_p
+      , I.lexer_lexbuf_to_supplier token lexbuf ) in 
+    let succeed () = () in
+    let fail checkpoint = 
       Diagnostics.fatal_error_raw "%s" (ErrorReports.report text !buffer checkpoint)
     in
     I.loop_handle succeed fail supplier checkpoint
@@ -79,10 +212,10 @@ rule coq_term = parse
       in 
       let rec push_all = function 
       | (loc, s) :: nil  -> begin
-        invoke_rc_pre_parser loc s lexer buffer;
+        invoke_rc_pre_parser loc s decl buffer;
         Queue.push Rc_pre_parser.ARG_END end
       | (loc, s) :: rest -> begin
-        invoke_rc_pre_parser loc s lexer buffer;
+        invoke_rc_pre_parser loc s decl buffer;
         Queue.push Rc_pre_parser.ARG_SEP;
         push_all rest end
       | nil               ->
