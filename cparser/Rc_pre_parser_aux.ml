@@ -1,77 +1,218 @@
 
-type decl = 
-  | Parameters of Cabs.loc
-  | Refined_by of Cabs.loc
-  | Exists of Cabs.loc
-  | Let of Cabs.loc
-  | Constraints of Cabs.loc
-  | Args of Cabs.loc
-  | Requires of Cabs.loc
-  | Ensures of Cabs.loc
-  | Inv_vars of Cabs.loc
-  | Annot_args of Cabs.loc
-  | Tactics of Cabs.loc
-  | Lemmas of Cabs.loc
-  | Typedef of Cabs.loc
-  | Size of Cabs.loc
-  | Tagged_union of Cabs.loc
-  | Union_tag of Cabs.loc
-  | Field of Cabs.loc
-  | Global of Cabs.loc
-  | Returns of Cabs.loc
-  | Manual_proof of Cabs.loc
-  | Annot of Cabs.loc
-  | Unfold_order of Cabs.loc
-  | Immovable of Cabs.loc
-  | Asrt of Cabs.loc
-  | Trust_me of Cabs.loc
-  | Skip of Cabs.loc
-  | Block of Cabs.loc
-  | Full_block of Cabs.loc
-  | Inlined of Cabs.loc
 
-let decl_of_string : string -> Cabs.loc -> decl = function 
-  | "parameters"    -> (fun loc -> Parameters loc)
-  | "refined_by"    -> (fun loc -> Refined_by loc)
-  | "exists"        -> (fun loc -> Exists loc)
-  | "let"           -> (fun loc -> Let loc)
-  | "constraints"   -> (fun loc -> Constraints loc)
-  | "args"          -> (fun loc -> Args loc)
-  | "requires"      -> (fun loc -> Requires loc)
-  | "ensures"       -> (fun loc -> Ensures loc)
-  | "inv_vars"      -> (fun loc -> Inv_vars loc)
-  | "annot_args"    -> (fun loc -> Annot_args loc)
-  | "tactics"       -> (fun loc -> Tactics loc)
-  | "lemmas"        -> (fun loc -> Lemmas loc)
-  | "typedef"       -> (fun loc -> Typedef loc)
-  | "size"          -> (fun loc -> Size loc)
-  | "tagged_union"  -> (fun loc -> Tagged_union loc)
-  | "union_tag"     -> (fun loc -> Union_tag loc)
-  | "field"         -> (fun loc -> Field loc)
-  | "global"        -> (fun loc -> Global loc)
-  | "returns"       -> (fun loc -> Returns loc)
-  | "manual_proof"  -> (fun loc -> Manual_proof loc)
-  | "annot"         -> (fun loc -> Annot loc)
-  | "unfold_order"  -> (fun loc -> Unfold_order loc)
-  | "immovable"     -> (fun loc -> Immovable loc)
-  | "asrt"          -> (fun loc -> Asrt loc)
-  | "trust_me"      -> (fun loc -> Trust_me loc)
-  | "skip"          -> (fun loc -> Skip loc)
-  | "block"         -> (fun loc -> Block loc)
-  | "full_block"    -> (fun loc -> Full_block loc)
-  | "inlined"       -> (fun loc -> Inlined loc)
-  | _               -> assert false (* impossible as called from Lexer.mll *)
+type quote_elt = 
+| Quot of string 
+| Anti of string
 
-type arguments = 
+type quote = quote_elt list
+
+module Bracketed : sig
+    type t 
+    val create : unit -> t
+    exception Ill_bracketed of string
+    val enter_quot : t -> unit
+    val exit_quot : t -> unit
+    val enter_anti : t -> unit
+    val exit_anti : t -> unit
+    val add_char : t -> char -> unit
+    val add_string : t -> string -> unit
+    val finalize : t -> quote
+    val outermost : t -> bool 
+    val in_anti : t -> bool
+
+end = struct
+  type t = 
+    { mutable quot_level : int
+    ; mutable anti_level : int 
+    ; acc : Buffer.t
+    ; mutable quote : quote  }
+
+  let create () = 
+    { quot_level= 1
+    ; anti_level= 0
+    ; acc= Buffer.create 100
+    ; quote= [] }
+
+  let end_span bk f = 
+    bk.quote <- (f ()) :: bk.quote;
+    Buffer.clear bk.acc
+
+  let end_quot bk = 
+    end_span bk (fun () -> 
+      Quot (Buffer.contents bk.acc))
+
+  let end_anti bk = 
+    end_span bk (fun () ->
+      Anti (Buffer.contents bk.acc))
+
+  exception Ill_bracketed of string
+  
+  let enter_quot bk =
+    match bk.quot_level with 
+    | 0 ->
+      raise (Ill_bracketed ("attempted to open second well-bracketed" ^ 
+                            "expression where one is permitted"))
+    | i when i > 0 -> begin
+      bk.quot_level <- i + 1 end
+    | _ ->
+      assert false
+
+  let exit_quot bk =
+    match bk.quot_level, bk.anti_level with 
+    | 0, _ -> 
+      raise (Ill_bracketed "excess closing bracket")
+    | 1, ai when ai = 0 -> begin 
+      bk.quot_level <- 0;
+      end_quot bk end
+    | qi, ai when qi > 0 && ai = 0 -> begin
+      bk.quot_level <- qi - 1 end
+    | qi, ai when qi > 0 && ai > 0 -> 
+      raise (Ill_bracketed "unclosed antiquotation")
+    | _ ->
+      assert false
+  
+  let enter_anti bk =
+    match bk.quot_level, bk.anti_level with 
+    | 0, _ ->
+      raise (Ill_bracketed "antiquotation outside of quotation")
+    | qi, 0 when qi > 0 -> begin 
+      end_quot bk;
+      bk.anti_level <- 1 end
+    | qi, ai when qi > 0 && ai > 0 -> begin
+      bk.anti_level <- ai + 1 end
+    | _ ->
+      assert false
+      
+  let outermost bk = 
+    match bk.quot_level, bk.anti_level with 
+    | qi, ai when qi > 0 && ai = 0 ->
+      true 
+    | 1, 0 ->
+      true
+    | _ ->
+      false
+
+  let exit_anti bk = 
+    match bk.quot_level, bk.anti_level with 
+    | 0, _ ->
+      raise (Ill_bracketed "antiquotation outside of quotation")
+    | qi, 0 when qi > 0 ->
+      raise (Ill_bracketed "excess closing bracket")
+    | qi, 1 when qi > 0 -> begin 
+      end_anti bk;
+      bk.anti_level <- 0 end
+    | qi, ai when qi > 0 && ai > 1 -> begin 
+      bk.anti_level <- ai - 1 end
+    | _ -> 
+      assert false
+
+  let in_anti bk = bk.anti_level > 0
+
+  let guard_extension bk fn = fun x ->
+    match bk.quot_level, bk.anti_level with 
+    | 0, _ ->
+      raise (Ill_bracketed ("attempted to open second well-bracketed" ^ 
+                            "expression where one is permitted"))
+    | qi, ai when qi > 0 && ai > 0 ->
+      raise (Invalid_argument ("cannot add chars to buffer" ^
+                               "within antiquotation"))
+    | qi, 0 when qi > 0 ->
+      fn x
+    | _ ->
+      assert false
+
+  let add_char : t -> char -> unit = 
+    fun bk ->
+      guard_extension bk (Buffer.add_char bk.acc)
+
+  let add_string : t -> string -> unit =
+    fun bk ->
+      guard_extension bk (Buffer.add_string bk.acc)
+
+  let finalize bk = 
+    match bk.quot_level, bk.anti_level with 
+    | 1, 0 -> begin 
+      bk.quot_level <- 0;
+      end_quot bk; 
+      bk.quote <- List.rev bk.quote; 
+      bk.quote end
+    | 0, _ -> 
+      bk.quote
+    | qi, ai when qi > 0 && ai > 0 ->
+      raise (Ill_bracketed "unclosed antiquotation")
+    | _ ->
+      assert false 
+end
+
+module Decl = struct 
+  type 'a t = 
+  | Parameters of 'a
+  | Refined_by of 'a
+  | Exists of 'a
+  | Let of 'a
+  | Constraints of 'a
+  | Args of 'a
+  | Requires of 'a
+  | Ensures of 'a
+  | Inv_vars of 'a
+  | Annot_args of 'a
+  | Tactics of 'a
+  | Lemmas of 'a
+  | Typedef of 'a
+  | Size of 'a
+  | Tagged_union of 'a
+  | Union_tag of 'a
+  | Field of 'a
+  | Global of 'a
+  | Returns of 'a
+  | Manual_proof of 'a
+  | Annot of 'a
+  | Unfold_order of 'a
+  | Immovable of 'a
+  | Asrt of 'a
+  | Trust_me of 'a
+  | Skip of 'a
+  | Block of 'a
+  | Full_block of 'a
+  | Inlined of 'a
+
+  let of_string : string -> 'a -> 'a t = function 
+    | "parameters"    -> (fun x -> Parameters x)
+    | "refined_by"    -> (fun x -> Refined_by x)
+    | "exists"        -> (fun x -> Exists x)
+    | "let"           -> (fun x -> Let x)
+    | "constraints"   -> (fun x -> Constraints x)
+    | "args"          -> (fun x -> Args x)
+    | "requires"      -> (fun x -> Requires x)
+    | "ensures"       -> (fun x -> Ensures x)
+    | "inv_vars"      -> (fun x -> Inv_vars x)
+    | "annot_args"    -> (fun x -> Annot_args x)
+    | "tactics"       -> (fun x -> Tactics x)
+    | "lemmas"        -> (fun x -> Lemmas x)
+    | "typedef"       -> (fun x -> Typedef x)
+    | "size"          -> (fun x -> Size x)
+    | "tagged_union"  -> (fun x -> Tagged_union x)
+    | "union_tag"     -> (fun x -> Union_tag x)
+    | "field"         -> (fun x -> Field x)
+    | "global"        -> (fun x -> Global x)
+    | "returns"       -> (fun x -> Returns x)
+    | "manual_proof"  -> (fun x -> Manual_proof x)
+    | "annot"         -> (fun x -> Annot x)
+    | "unfold_order"  -> (fun x -> Unfold_order x)
+    | "immovable"     -> (fun x -> Immovable x)
+    | "asrt"          -> (fun x -> Asrt x)
+    | "trust_me"      -> (fun x -> Trust_me x)
+    | "skip"          -> (fun x -> Skip x)
+    | "block"         -> (fun x -> Block x)
+    | "full_block"    -> (fun x -> Full_block x)
+    | "inlined"       -> (fun x -> Inlined x)
+    | _               -> assert false (* impossible as called from Lexer.mll *)
+end
+
+type 'a arguments = 
   | Zero 
-  | One of (Cabs.loc * string list)
-  | Many of ((Cabs.loc * string list) list)
-
-type 'a quote_elt = 
-  | Quot of string 
-  | Anti of 'a
-
-type 'a quote = 'a quote_elt list
+  | One of 'a * string list
+  | Many of ('a * string list) list
 
 type rocq_term  = type_expr quote
 

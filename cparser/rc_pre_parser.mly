@@ -8,28 +8,17 @@
 %token<Cabs.loc> GLOBAL OWN SHARE FRAC
 
 %start<unit> 
-  parameters_anno 
-  refined_by_anno 
-  exists_anno 
   let_anno 
-  constraints_anno 
-  args_anno 
-  requires_anno 
-  ensures_anno
-  inv_vars_anno
   annot_args_anno
-  tactics_anno
-  lemmas_anno
-  typedef_anno
-  size_anno
-  tagged_union_anno
   union_tag_anno
-  field_anno
-  global_anno
-  returns_anno
   manual_proof_anno
-  annot_anno
-  unfold_order_anno
+  named_rocq_expr
+  constr
+  full_type_expr
+  named_full_type_expr
+  raw_text
+  rocq_expr
+  integer
 
 %inline ioption(X):
 | /* nothing */
@@ -125,56 +114,18 @@ type_args:
 |
 | type_expr_arg type_args_tail
 
-(* specific entry points *)
-
-parameters_anno: named_rocq_expr
-
-refined_by_anno: named_rocq_expr
-
-exists_anno: named_rocq_expr
-
 let_anno:
 | as_ident optional(COLON rocq_expr, EQUAL rocq_expr)
-
-constraints_anno: constr
-
-arg_anno: full_type_expr
-
-requires_anno: constr
-
-ensures_anno: constr
-
-inv_vars_anno: named_full_type_expr
 
 annot_args_anno:
 | INTEGER COLON INTEGER rocq_expr
 
-tactics_anno: RAW_TEXT
-
-lemmas_anno: RAW_TEXT
-
-typedef_anno: named_full_type_expr
-
-size_anno: rocq_expr
-
-tagged_union_anno: rocq_expr
-
 union_tag_anno: 
 | as_ident named_rocq_expr_parens*
-
-field_anno: full_type_expr
-
-global_anno: full_type_expr
-
-returns_anno: full_type_expr
 
 manual_proof_anno:
 | as_ident dot_ident* COLON as_ident COMMA as_ident
   {}
-
-annot_anno: RAW_TEXT
-
-unfold_order_anno: INTEGER
 
 
 
