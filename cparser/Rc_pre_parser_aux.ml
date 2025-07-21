@@ -1,22 +1,22 @@
 
 
-type quote_elt = 
-| Quot of string 
-| Anti of string
+type pre_quote_elt = 
+| PreQuot of string * Lexing.position
+| PreAnti of string * Lexing.position
 
-type quote = quote_elt list
+type pre_quote = pre_quote_elt list
 
 module Bracketed : sig
     type t 
-    val create : unit -> t
+    val create : Lexing.position -> t
     exception Ill_bracketed of string
     val enter_quot : t -> unit
     val exit_quot : t -> unit
-    val enter_anti : t -> unit
-    val exit_anti : t -> unit
+    val enter_anti : ?start_p:Lexing.position -> t -> unit
+    val exit_anti : ?start_p:Lexing.position -> t -> unit
     val add_char : t -> char -> unit
     val add_string : t -> string -> unit
-    val finalize : t -> quote
+    val finalize : t -> pre_quote
     val outermost : t -> bool 
     val in_anti : t -> bool
 
@@ -25,34 +25,38 @@ end = struct
     { mutable quot_level : int
     ; mutable anti_level : int 
     ; acc : Buffer.t
-    ; mutable quote : quote  }
+    ; mutable acc_start : Lexing.position
+    ; mutable quote : pre_quote  }
 
-  let create () = 
+  exception Ill_bracketed of string
+    
+  let create start_p = 
     { quot_level= 1
     ; anti_level= 0
     ; acc= Buffer.create 100
+    ; acc_start= start_p
     ; quote= [] }
 
-  let end_span bk f = 
+  let end_span bk f =     
     bk.quote <- (f ()) :: bk.quote;
     Buffer.clear bk.acc
 
   let end_quot bk = 
     end_span bk (fun () -> 
-      Quot (Buffer.contents bk.acc))
+      PreQuot (Buffer.contents bk.acc, bk.acc_start))
 
   let end_anti bk = 
     end_span bk (fun () ->
-      Anti (Buffer.contents bk.acc))
-
-  exception Ill_bracketed of string
+      PreAnti (Buffer.contents bk.acc, bk.acc_start))
   
   let enter_quot bk =
-    match bk.quot_level with 
-    | 0 ->
+    match bk.quot_level, bk.anti_level with 
+    | 0, _ ->
       raise (Ill_bracketed ("attempted to open second well-bracketed" ^ 
                             "expression where one is permitted"))
-    | i when i > 0 -> begin
+    | _, ai when ai > 0 ->
+      raise (Ill_bracketed ("cannot reenter quotation within antiquotation"))
+    | i, 0 when i > 0 -> begin
       bk.quot_level <- i + 1 end
     | _ ->
       assert false
@@ -68,42 +72,44 @@ end = struct
       bk.quot_level <- qi - 1 end
     | qi, ai when qi > 0 && ai > 0 -> 
       raise (Ill_bracketed "unclosed antiquotation")
-    | _ ->
+    | _, _ ->
       assert false
   
-  let enter_anti bk =
-    match bk.quot_level, bk.anti_level with 
-    | 0, _ ->
+  let enter_anti ?start_p bk =
+    match bk.quot_level, bk.anti_level, start_p with 
+    | 0, _, _ ->
       raise (Ill_bracketed "antiquotation outside of quotation")
-    | qi, 0 when qi > 0 -> begin 
+    | qi, 0, Some p when qi > 0 -> begin 
       end_quot bk;
-      bk.anti_level <- 1 end
-    | qi, ai when qi > 0 && ai > 0 -> begin
+      bk.anti_level <- 1;
+      bk.acc_start <- p end
+    | qi, ai, _ when qi > 0 && ai > 0 -> begin
       bk.anti_level <- ai + 1 end
-    | _ ->
+    | _, _, _ ->
       assert false
       
   let outermost bk = 
     match bk.quot_level, bk.anti_level with 
-    | qi, ai when qi > 0 && ai = 0 ->
+    | qi, 1 when qi > 0 ->
       true 
     | 1, 0 ->
       true
     | _ ->
       false
 
-  let exit_anti bk = 
-    match bk.quot_level, bk.anti_level with 
-    | 0, _ ->
+  let exit_anti ?start_p bk = 
+    match bk.quot_level, bk.anti_level, start_p with 
+    | 0, _, _ ->
       raise (Ill_bracketed "antiquotation outside of quotation")
-    | qi, 0 when qi > 0 ->
+    | qi, 0, _  when qi > 0 ->
       raise (Ill_bracketed "excess closing bracket")
-    | qi, 1 when qi > 0 -> begin 
+    | qi, 1, Some p when qi > 0 -> begin 
       end_anti bk;
-      bk.anti_level <- 0 end
-    | qi, ai when qi > 0 && ai > 1 -> begin 
+      bk.anti_level <- 0;
+      bk.acc_start <- p end
+    | qi, ai, _ when qi > 0 && ai > 1 -> begin 
       bk.anti_level <- ai - 1 end
-    | _ -> 
+    | _, _, _ -> 
       assert false
 
   let in_anti bk = bk.anti_level > 0
@@ -113,12 +119,9 @@ end = struct
     | 0, _ ->
       raise (Ill_bracketed ("attempted to open second well-bracketed" ^ 
                             "expression where one is permitted"))
-    | qi, ai when qi > 0 && ai > 0 ->
-      raise (Invalid_argument ("cannot add chars to buffer" ^
-                               "within antiquotation"))
-    | qi, 0 when qi > 0 ->
+    | qi, ai when qi > 0 && ai >= 0 ->
       fn x
-    | _ ->
+    | _, _ ->
       assert false
 
   let add_char : t -> char -> unit = 
@@ -136,13 +139,21 @@ end = struct
       end_quot bk; 
       bk.quote <- List.rev bk.quote; 
       bk.quote end
-    | 0, _ -> 
+    | 0, 0 -> 
       bk.quote
     | qi, ai when qi > 0 && ai > 0 ->
       raise (Ill_bracketed "unclosed antiquotation")
-    | _ ->
+    | _, _ ->
       assert false 
 end
+
+type bracket_type = Rocq | Iris 
+
+and bracket_scope = (Lexing.lexbuf option * pre_quote * bracket_type)
+
+let map_scope rocq_opt iris_opt = function 
+  | Rocq -> rocq_opt 
+  | Iris -> iris_opt
 
 module Decl = struct 
   type 'a t = 
@@ -213,6 +224,12 @@ type 'a arguments =
   | Zero 
   | One of 'a * string list
   | Many of ('a * string list) list
+
+type 'a quote_elt = 
+  | Quot of string 
+  | Anti of 'a
+
+type 'a quote = 'a quote_elt list
 
 type rocq_term  = type_expr quote
 

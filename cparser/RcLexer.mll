@@ -28,7 +28,8 @@ let fatal_error lb fmt =
 module SSet = Set.Make(String)
 
 let lexicon : SSet.t = SSet.of_list [
-                            "global"
+                          ; "void"
+                          ; "global"
                           ; "own"
                           ; "shr"
                           ; "frac" ]
@@ -36,7 +37,6 @@ let lexicon : SSet.t = SSet.of_list [
 let clash name = SSet.mem name lexicon
 
 module B = Rc_pp_aux.Bracket
-
 }
 
 let whitespace_char = [' ' '\t' '\n' '\011' '\012' '\r']
@@ -57,125 +57,110 @@ let nondigit = ['_' 'a'-'z' 'A'-'Z']
 let ident_base = nondigit ( digit | nondigit ) *
 let integer = digit +
 
-rule rocq_term bk = parse
-  | eof                    { begin try B.finalize bk with 
-                             | Ill_bracketed es -> 
-                               fatal_error lexbuf es end }
-  | "!{" as s              { if B.in_anti bk then 
-                               fatal_error lexbuf 
-                                 "outermost antiquotation must be formed as \"!{ ... }\""
-                             else begin try B.enter_anti bk with 
-                               | Ill_bracketed es ->
-                                 fatal_error lexbuf es end;
-                             rocq_term bk lexbuf }
-  | "{" as s               { try begin 
-                               if B.in_anti bk 
-                                 then B.enter_anti bk
-                                 else B.enter_quot bk 
-                             end with Ill_bracketed es ->
-                               fatal_error lexbuf es;
-                             B.add_string bk s;
-                             rocq_term bk lexbuf } 
-  | "}" as s               { try begin 
-                               if B.in_anti bk 
-                                 then begin
-                                   if not B.outermost bk
-                                     then B.add_string bk s;
-                                   B.exit_anti bk;
-                                   rocq_term bk lexbuf 
-                                 end
-                                 else begin 
-                                   let final = B.outermost bk in 
-                                   B.exit_quot bk;
-                                   if final 
-                                     then B.finalize bk 
-                                     else begin
-                                       B.add_string bk s;
-                                       rocq_term bk lexbuf
-                                     end
-                                 end
-                             end with Ill_bracketed es ->
-                               fatal_error lexbuf es }
-  | ""                     { if B.in_anti bk 
-                               then rocq_term_anti bk lexbuf 
-                               else rocq_term_quot bk lexbuf }
-
-and rocq_term_quot bk = parse 
+rule rocq_term_quot bk = parse 
   | non_ascii as s         { B.add_string bk s; 
                              rocq_term_quot bk lexbuf }
-  | [^ '!' '{' '}'] as c   { B.add_char bk c;
+  | "!{"                   { let start_p = Some lexbuf.lex_curr_p in
+                             begin try B.enter_anti bk ~start_p with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             rocq_term_anti bk lexbuf }
+  | "{" as s               { begin try B.enter_quot bk with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
                              rocq_term_quot bk lexbuf }
-  | ""                     { rocq_term bk lexbuf }
+  | "}" as s               { let outer = B.outermost bk in 
+                             B.exit_quot bk;
+                             try begin 
+                               if outer then begin
+                                 B.finalize bk 
+                               end else begin 
+                                   B.add_string bk s;
+                                   rocq_term_quot bk lexbuf end
+                               end with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
+                             rocq_term_quot bk lexbuf }
 
 and rocq_term_anti bk = parse
   | non_ascii as s         { B.add_string bk s;
                              rocq_term_anti bk lexbuf }
-  | [^ '!' '{' '}'] as c   { B.add_char bk c;
-                             rocq_term_anti bk lexbuf }
-  | ""                     { rocq_term bk lexbuf }
-
-rule iris_term bk = parse 
-  | eof                    { begin try B.finalize bk with 
-                             | Ill_bracketed es -> 
-                               fatal_error lexbuf es end }
-  | "!{"                   { if B.in_anti bk then 
-                               fatal_error lexbuf 
-                                 "outermost antiquotation must be formed as \"!{ ... }\""
-                             else begin try B.enter_anti bk with 
-                               | Ill_bracketed es ->
-                                 fatal_error lexbuf es end;
-                             iris_term bk lexbuf }
-  | "{" as s               { begin try B.enter_anti bk with 
+  | "{" as s               { begin try B.enter_anti with 
                              | Ill_bracketed es ->
                                fatal_error lexbuf es end;
                              B.add_string bk s;
-                             iris_term bk lexbuf } 
-  | "}" as s               { try begin
-                               if not B.outermost bk
-                                 then B.add_string bk s;
-                               B.exit_anti bk;
-                               iris_term bk lexbuf 
+                             rocq_term_anti bk lexbuf }
+  | "}" as s               { let outer = B.outermost bk in 
+                             let start_p = if outer then Some lexbuf.lex_curr_p
+                                                         else None in
+                             try begin 
+                               B.exit_anti bk ~start_p;
+                               if not outer then B.add_string bk s;
+                               if outer then rocq_term_quot bk lexbuf
+                                        else rocq_term_anti bk lexbuf
                              end with Ill_bracketed es ->
                                fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
+                             rocq_term_anti bk lexbuf }
+
+
+rule iris_term_quot bk = parse 
+  | non_ascii as s         { B.add_string bk s; 
+                             iris_term_quot bk lexbuf }
+  | "!{" as s              { let start_p = Some lexbuf.lex_curr_p in 
+                             begin try B.enter_anti bk ~start_p with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             iris_term_anti bk lexbuf }
   | "[" as s               { begin try B.enter_quot bk with 
                              | Ill_bracketed es ->
                                fatal_error lexbuf es end;
                              B.add_string bk s;
-                             iris_term bk lexbuf }
-  | "]" as s               { try begin 
-                               let final = B.outermost bk in 
+                             iris_term_quot bk lexbuf }
+  | "]" as s               { try begin
+                               let outer = B.outermost bk in
                                B.exit_quot bk;
-                               if final 
-                                 then B.finalize bk 
-                                 else begin 
-                                   B.add_string bk s;
-                                   iris_term bk lexbuf
-                                 end
-
+                               if outer then begin
+                                 B.finalize bk 
+                               end else begin 
+                                 B.add_string bk s;
+                                 iris_term_quot bk lexbuf
+                               end
                              end with Ill_bracketed es ->
                                fatal_error lexbuf es }
-  | ""                     { if B.in_anti bk 
-                               then iris_term_anti bk lexbuf 
-                               else iris_term_quot bk lexbuf }
-
-and iris_term_quot bk = parse 
-  | non_ascii as s         { B.add_string bk s; 
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  _ as c                   { B.add_string bk c;
                              iris_term_quot bk lexbuf }
-  | [^ '!' '{' '}' '[' ']'] as c   
-                           { B.add_char bk c;
-                             iris_term_quot bk lexbuf }
-  | ""                     { iris_term bk lexbuf }
 
 and iris_term_anti bk = parse
   | non_ascii as s         { B.add_string bk s;
                              iris_term_anti bk lexbuf }
-  | [^ '!' '{' '}' '[' ']'] as c
-                           { B.add_char bk c;
+  | "{"                    { begin try B.enter_anti bk with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
+                             iris_term_anti bk }
+  | "}" as s               { try begin
+                               let outer = B.outermost bk in
+                               if not outer then B.add_string bk s;
+                               let start_p = if outer then Some lexbuf.lex_curr_p
+                                                      else None in
+                               B.exit_anti bk ~start_p; 
+                               if outer then iris_term_quot bk lexbuf
+                                        else iris_term_anti bk lexbuf
+                             end with Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
                              iris_term_anti bk lexbuf }
-  | ""                     { iris_term bk lexbuf }
 
-rule token = parse
-  | whitespace_char +      { token lexbuf }
+rule tokenize = parse
+  | eof                    { Rc_pp.EOF }
+  | whitespace_char +      { tokenize lexbuf }
   | integer                { Rc_pp.INTEGER (int_of_string i, loc_of_lb lexbuf) }
   | "&" ident_base "*"     { fatal_error lexbuf "invalid RefinedC identifier" }
   | "&" (ident_base as n)  { if clash n then fatal_error lexbuf 
@@ -201,19 +186,65 @@ rule token = parse
   | ")"                    { Rc_pp.RPAREN (loc_of_lb lexbuf) }
   | "λ"                    { Rc_pp.LAMBDA (loc_of_lb lexbuf) }
   | ","                    { Rc_pp.COMMA (loc_of_lb lexbuf) }
-  | "{"                    { let bk = B.create () in 
-                             let q = rocq_term bk lexbuf in 
-                             Rc_pp.PRE_BRACKETED (q, loc_of_lb lexbuf) }
-  | "["                    { let bk = B.create () in 
-                             let q = iris_term bk lexbuf in
-                             Rc_pp.PRE_BRACKETED (q, loc_of_lb lexbuf) }
+  | "{"                    { let start_p = lexbuf.lex_curr_p in
+                             let bk = B.create start_p in 
+                             let qs = rocq_term_quot bk lexbuf in 
+                             Rc_pp.PRE_BRACKETED_ROCQ qs }
+  | "["                    { let start_p = lexbuf.lex_curr_p in 
+                             let bk = B.create start_p in 
+                             let qs = iris_term_quot bk lexbuf in
+                             Rc_pp.PRE_BRACKETED_IRIS qs }
   | udot as c              { Rc_pp.UCHAR (c, loc_of_lb lexbuf) }
 
 {
 
-  let lexer = 
+  let lexer tokens buffer : lexbuf -> Rc_pp.token = 
+    let bk_cxt : bracket_scope list ref = ref nil in
+    let push_yield e = Queue.push e tokens; e in
+    let digest = function 
+      | Rc_pp.PRE_BRACKETED_ROCQ qs -> begin 
+        bk_cxt := (None, qs, Rocq) :: !bk_ckt;
+        push_yield Rc_pp.ROCQ_WELL_BR_OPEN end
+      | Rc_pp.PRE_BRACKETED_IRIS qs -> begin
+        bk_cxt := (None, qs, Iris) :: !bk_cxt;
+        push_yield Rc_pp.IRIS_WELL_BR_OPEN end
+      | other -> push_yield other
+    in
+    let push_split scope rocq_opt iris_opt =
+      push_yield (map_scope rocq_opt iris_opt scope)
+    in
+    let nest_lb_of_string p s = 
+      let lb = Lexbuf.of_string s in 
+      lb.lex_curr_p <- p; 
+      p
+    in
+    fun base_lb ->
+      match !bk_cxt with
+      | (Some nest_lb, qs, scope) :: rest -> begin 
+        match tokenize nest_lb with
+        | Rc_pp.EOF -> begin 
+          bk_cxt := (None, qs, scope) :: rest;
+          push_yield Rc_pp.ANTI_CLOS end
+        | e -> 
+          digest e end
+      | (None, PreQuot (s, pos) :: qs, scope) :: rest -> begin
+        bk_cxt := (None, qs, scope) :: rest;
+        push_yield (Rc_pp.QUOT (s, loc_of_start_p pos)) end
+      | (None, PreAnti (s, pos) :: qs, scope) :: rest -> begin 
+        let nest_lb = nest_lb_of_string pos s in
+        bk_cxt := (Some nest_lb, qs, scope) :: rest;
+        push_yield Rc_pp.ANTI_OPEN end
+      | (None, nil, scope) :: rest -> begin 
+        bk_cxt := rest;
+        push_split scope Rc_pp.ROCQ_WELL_BR_CLOS Rc_pp.IRIS_WELL_BR_CLOS end
+      | nil -> begin 
+        let token = digest (tokenize base_lb) in
+        let start_p = lexbuf.lex_start_p in 
+        let end_p = lexbuf.lex_curr_p in 
+        buffer := ErrorReports.update !buffer (start_p, end_p);
+        token end
 
-  let invoke_rc_pre_parser loc text decl buffer = 
+  let invoke_rc_pre_parser loc text decl tokens buffer = 
     let lexbuf = Lexing.from_string text in 
     lexbuf.lex_curr_p <- 
       { lexbuf.lex_curr_p with 
@@ -258,7 +289,7 @@ rule token = parse
         | Lemmas _ | Typedef _ | Annot _ ->
           passthrough
         | _ ->
-          lexer 
+          lexer tokens buffer
       end in 
       I.lexer_lexbuf_to_supplier lexer lexbuf 
     and succeed () = ()
@@ -279,25 +310,25 @@ rule token = parse
       let args = 
         match args with 
         | Zero -> begin
-          Queue.push (Rc_pre_parser.ZERO_ARG_DECL decl);
+          Queue.push (Rc_pre_parser.ZERO_ARG_DECL decl) tokens;
           [] end
         | One a -> begin
-          Queue.push (Rc_pre_parser.ONE_ARG_DECL decl);
+          Queue.push (Rc_pre_parser.ONE_ARG_DECL decl) tokens;
           [a] end
         | Many aa -> begin
-          Queue.push (Rc_pre_parser.MANY_ARG_DECL decl);
+          Queue.push (Rc_pre_parser.MANY_ARG_DECL decl) tokens;
           aa end 
       in 
       let rec push_all = function 
       | (loc, s) :: nil  -> begin
-        invoke_rc_pre_parser loc s decl buffer;
-        Queue.push Rc_pre_parser.ARG_END end
+        invoke_rc_pre_parser loc s decl tokens buffer;
+        Queue.push Rc_pre_parser.ARG_END tokens end
       | (loc, s) :: rest -> begin
-        invoke_rc_pre_parser loc s decl buffer;
-        Queue.push Rc_pre_parser.ARG_SEP;
+        invoke_rc_pre_parser loc s decl tokens buffer;
+        Queue.push Rc_pre_parser.ARG_SEP tokens;
         push_all rest end
-      | nil               ->
-        Queue.push Rc_pre_parser.ARG_END
+      | nil ->
+        Queue.push Rc_pre_parser.ARG_END tokens
       in 
       push_all args;
       Lazy.from_fun compute_buffer
