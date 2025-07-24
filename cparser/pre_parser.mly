@@ -40,6 +40,8 @@
   | Decl_other
   | Decl_fun of (unit -> unit)
   | Decl_krfun of 'id
+  
+  module Rc_pp_aux = Rc_pre_parser_aux
 
 %}
 
@@ -418,20 +420,20 @@ expression:
 (* The phantom parameter is either [block_item], which means we are
    definitely reading a declaration, or [external_declaration], which
    means we could also be reading the beginning of a function definition. *)
-declaration(phantom):
-| declaration_specifiers(declaration(phantom)) init_declarator_list?    SEMICOLON
+declaration(phantom, anno_cxt):
+| declaration_specifiers(declaration(phantom, anno_cxt)) init_declarator_list(anno_cxt)?    SEMICOLON
 | declaration_specifiers_typedef               typedef_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
 
-init_declarator_list:
-| init_declarator
-| init_declarator_list COMMA init_declarator
+init_declarator_list(anno_cxt):
+| init_declarator(anno_cxt)
+| init_declarator_list(anno_cxt) COMMA init_declarator(anno_cxt)
     {}
 
-init_declarator:
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list EQ c_initializer
+init_declarator(anno_cxt):
+| declare_varname(declarator_noattrend) save_context attribute_specifier_list(anno_cxt)
+| declare_varname(declarator_noattrend) save_context attribute_specifier_list(anno_cxt) EQ c_initializer
     {}
 
 typedef_declarator_list:
@@ -452,20 +454,20 @@ storage_class_specifier_no_typedef:
 
 (* [declaration_specifier_no_type] matches declaration specifiers
    that do not contain either "typedef" nor type specifiers. *)
-%inline declaration_specifier_no_type:
+%inline declaration_specifier_no_type(anno_cxt):
 | storage_class_specifier_no_typedef
 | type_qualifier_noattr
 | function_specifier
-| attribute_specifier
+| attribute_specifier(anno_cxt)
     {}
 
 (* [declaration_specifier_no_typedef_name] matches declaration
    specifiers that contain neither "typedef" nor a typedef name
    (i.e. type specifier declared using a previous "typedef
    keyword"). *)
-declaration_specifier_no_typedef_name:
+declaration_specifier_no_typedef_name(anno_cxt):
 | storage_class_specifier_no_typedef
-| type_qualifier
+| type_qualifier(anno_cxt)
 | function_specifier
 | type_specifier_no_typedef_name
     {}
@@ -521,8 +523,8 @@ type_specifier_no_typedef_name:
     {}
 
 struct_or_union_specifier:
-| struct_or_union attribute_specifier_list other_identifier? LBRACE struct_declaration_list RBRACE
-| struct_or_union attribute_specifier_list other_identifier
+| struct_or_union attribute_specifier_list(struct_defn_cxt) other_identifier? LBRACE struct_declaration_list RBRACE
+| struct_or_union attribute_specifier_list(struct_defn_cxt) other_identifier
     {}
 
 struct_or_union:
@@ -536,21 +538,21 @@ struct_declaration_list:
     {}
 
 struct_declaration:
-| specifier_qualifier_list(struct_declaration) struct_declarator_list? SEMICOLON
+| specifier_qualifier_list(struct_declaration, struct_memb_cxt) struct_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
 
 (* As in the standard, except it also encodes the constraint described
    in the comment above [declaration_specifiers]. *)
 (* The phantom parameter can be [struct_declaration] or [type_name]. *)
-specifier_qualifier_list(phantom):
-| ioption(type_qualifier_list) typedef_name                   type_qualifier_list?
-| ioption(type_qualifier_list) type_specifier_no_typedef_name specifier_qualifier_no_typedef_name*
+specifier_qualifier_list(phantom, anno_cxt):
+| ioption(type_qualifier_list(anno_cxt)) typedef_name                   type_qualifier_list(anno_cxt)?
+| ioption(type_qualifier_list(anno_cxt)) type_specifier_no_typedef_name specifier_qualifier_no_typedef_name(anno_cxt)*
     {}
 
-specifier_qualifier_no_typedef_name:
+specifier_qualifier_no_typedef_name(anno_cxt):
 | type_specifier_no_typedef_name
-| type_qualifier
+| type_qualifier(anno_cxt)
     {}
 
 struct_declarator_list:
@@ -564,8 +566,8 @@ struct_declarator:
     {}
 
 enum_specifier:
-| ENUM attribute_specifier_list other_identifier? LBRACE enumerator_list COMMA? RBRACE
-| ENUM attribute_specifier_list other_identifier
+| ENUM attribute_specifier_list(enum_cxt) other_identifier? LBRACE enumerator_list COMMA? RBRACE
+| ENUM attribute_specifier_list(enum_cxt) other_identifier
     {}
 
 enumerator_list:
@@ -588,22 +590,44 @@ type_qualifier_noattr:
 | VOLATILE
     {}
 
-%inline type_qualifier:
+%inline type_qualifier(anno_cxt):
 | type_qualifier_noattr
-| attribute_specifier
+| attribute_specifier(anno_cxt)
     {}
 
-attribute_specifier_list:
+lemmas_cxt:
+  /* empty */ { Rc_pp_aux.Lemmas_Cxt }
+
+function_cxt:
+  /* empty */ { Rc_pp_aux.Function_Cxt }
+
+struct_defn_cxt:
+  /* empty */ { Rc_pp_aux.Struct_Defn_Cxt }
+
+loop_cxt:
+  /* empty */ { Rc_pp_aux.Loop_Cxt }
+
+stmtexpr_cxt:
+  /* empty */ { Rc_pp_aux.StmtExpr_Cxt}
+
+global_cxt:
+  /* empty */ { Rc_pp_aux.Global_Cxt }
+
+rc_anno(anno_cxt):
+| a = RCANNO c = anno_cxt
+  {}
+
+attribute_specifier_list(anno_cxt):
 | /* empty */
-| attribute_specifier attribute_specifier_list
+| attribute_specifier(anno_cxt) attribute_specifier_list(anno_cxt)
     {}
 
-attribute_specifier:
+attribute_specifier(anno_cxt):
 | ATTRIBUTE LPAREN LPAREN gcc_attribute_list RPAREN RPAREN
 | PACKED LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN type_name RPAREN
-| RCANNO
+| rc_anno(anno_cxt)
     {}
 
 gcc_attribute_list:
@@ -676,36 +700,36 @@ declarator_identifier:
    identifier being defined and a value containing the context stack
    that has to be restored if entering the body of the function being
    defined, if so. *)
-declarator:
-| x = declarator_noattrend attribute_specifier_list
+declarator(anno_cxt):
+| x = declarator_noattrend(anno_cxt) attribute_specifier_list(anno_cxt)
     { x }
 
-declarator_noattrend:
-| x = direct_declarator
+declarator_noattrend(anno_cxt):
+| x = direct_declarator(anno_cxt)
     { x }
-| pointer x = direct_declarator
+| pointer x = direct_declarator(anno_cxt)
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
 
-direct_declarator:
+direct_declarator(anno_cxt):
 | i = declarator_identifier
     { set_id_type i VarId; (i, Decl_ident) }
 | LPAREN save_context x = declarator RPAREN
     { x }
-| x = direct_declarator LBRACK type_qualifier_list? optional(assignment_expression, RBRACK)
+| x = direct_declarator LBRACK type_qualifier_list(anno_cxt)? optional(assignment_expression, RBRACK)
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK STATIC type_qualifier_list? assignment_expression RBRACK
+| x = direct_declarator LBRACK STATIC type_qualifier_list(anno_cxt)? assignment_expression RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list STATIC assignment_expression RBRACK
+| x = direct_declarator LBRACK type_qualifier_list(anno_cxt) STATIC assignment_expression RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list? STAR RBRACK
+| x = direct_declarator LBRACK type_qualifier_list(anno_cxt)? STAR RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
@@ -732,16 +756,16 @@ direct_declarator:
    When the C standard writes [pointer?], which represents a possibly empty
    list of [pointer1]'s, we write [pointer1*]. *)
 
-%inline pointer1:
-  STAR type_qualifier_list?
+%inline pointer1(anno_cxt):
+  STAR type_qualifier_list(anno_cxt)?
     {}
 
-%inline pointer:
-  pointer1* pointer1
+%inline pointer(anno_cxt):
+  pointer1(anno_cxt)* pointer1(anno_cxt)
     {}
 
-type_qualifier_list:
-| type_qualifier_list? type_qualifier
+type_qualifier_list(anno_cxt):
+| type_qualifier_list(anno_cxt)? type_qualifier(anno_cxt)
     {}
 
 context_parameter_type_list:
@@ -760,29 +784,29 @@ parameter_list:
 
 parameter_declaration:
 | declaration_specifiers(parameter_declaration) declare_varname(declarator)
-| declaration_specifiers(parameter_declaration) abstract_declarator(parameter_declaration)?
+| declaration_specifiers(parameter_declaration) abstract_declarator(parameter_declaration, anno_cxt)?
     {}
 
 type_name:
-| specifier_qualifier_list(type_name) abstract_declarator(type_name)?
+| specifier_qualifier_list(type_name, anno_cxt) abstract_declarator(type_name, anno_cxt)?
     {}
 
 (* The phantom parameter can be [parameter_declaration] or [type_name].
    We take the latter to mean [type_or_name] or [direct_abstract_declarator].
    We need not distinguish these two cases: in both cases, a closing parenthesis
    is permitted (and we do not wish to keep track of why it is permitted). *)
-abstract_declarator(phantom):
+abstract_declarator(phantom, anno_cxt):
 | pointer
-| ioption(pointer) direct_abstract_declarator
+| ioption(pointer) direct_abstract_declarator(anno_cxt)
     {}
 
-direct_abstract_declarator:
-| LPAREN save_context abstract_declarator(type_name) RPAREN
-| direct_abstract_declarator? LBRACK type_qualifier_list? optional(assignment_expression, RBRACK)
-| direct_abstract_declarator? LBRACK STATIC type_qualifier_list? assignment_expression RBRACK
-| direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-| direct_abstract_declarator? LBRACK type_qualifier_list? STAR RBRACK
-| ioption(direct_abstract_declarator) LPAREN context_parameter_type_list? RPAREN
+direct_abstract_declarator(anno_cxt):
+| LPAREN save_context abstract_declarator(type_name(anno_cxt)) RPAREN
+| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt)? optional(assignment_expression, RBRACK)
+| direct_abstract_declarator(anno_cxt)? LBRACK STATIC type_qualifier_list(anno_cxt)? assignment_expression RBRACK
+| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt) STATIC assignment_expression RBRACK
+| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt)? STAR RBRACK
+| ioption(direct_abstract_declarator(anno_cxt)) LPAREN context_parameter_type_list? RPAREN
     {}
 
 c_initializer:
@@ -938,7 +962,7 @@ identifier_list:
     { x::l }
 
 kr_param_declaration:
-| declaration_specifiers(declaration(block_item)) init_declarator_list? SEMICOLON
+| declaration_specifiers(declaration(block_item)) init_declarator_list(function_cxt)? SEMICOLON
     {}
 
 declaration_list:
@@ -949,7 +973,7 @@ declaration_list:
 function_definition1:
 | declaration_specifiers(declaration(external_declaration))
     func = declare_varname(declarator_noattrend)
-    save_context attribute_specifier_list ctx = save_context
+    save_context attribute_specifier_list(function_cxt) ctx = save_context
 | declaration_specifiers(declaration(external_declaration))
     func = declare_varname(declarator_noattrend)
     ctx = save_context declaration_list

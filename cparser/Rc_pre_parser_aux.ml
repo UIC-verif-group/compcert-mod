@@ -350,3 +350,12 @@ type rc_annotation =
   | Tactics_Anno      of string list 
   | Manual_Anno       of manual_proof
   | Unfold_Order_Anno of int
+
+type anno_context = 
+  | Lemmas_Cxt 
+  | Function_Cxt 
+  | Struct_Defn_Cxt
+  | Struct_Memb_Cxt
+  | Loop_Cxt
+  | StmtExpr_Cxt 
+  | Global_Cxt

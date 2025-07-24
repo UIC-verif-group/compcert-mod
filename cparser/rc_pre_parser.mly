@@ -62,6 +62,26 @@ dot_ident:
 | DOTONE as_ident
   {}
 
+rocq_term:
+| ROCQ_WELL_BR_OPEN rocq_term_contents ROCQ_WELL_BR_CLOS
+  {}
+
+rocq_term_contents:
+| (* nothing *)
+| QUOT
+| QUOT ANTI_OPEN full_type_expr ANTI_CLOS rocq_term_contents
+  {}
+
+iris_term:
+| IRIS_WELL_BR_OPEN iris_term_contents IRIS_WELL_BR_CLOS
+  {}
+
+iris_term_contents:
+| (* nothing *)
+| QUOT 
+| QUOT ANTI_OPEN full_type_expr ANTI_CLOS iris_term_contents
+  {}
+
 rocq_expr:
 | as_ident 
 | rocq_term
@@ -95,22 +115,20 @@ constr:
   {}
 
 atomic_type_expr:
-| as_ident
-| rocq_term
-| rocq_expr AT atomic_type_expr
+| rocq_expr option(AT atomic_type_expr)
 | as_ty_name LANGLE type_args RANGLE
 | DOTTHREE
 | LPAREN full_type_expr RPAREN 
   {}
 
 cstring_type_expr:
-| atomic_type_expr
 | cstring_type_expr AMPERSAND constr
+| atomic_type_expr
   {}
 
 full_type_expr:
-| cstring_type_expr
 | EXISTS pattern optional(COLON rocq_expr, DOTONE full_type_expr)
+| cstring_type_expr
   {}
 
 type_expr_arg:
