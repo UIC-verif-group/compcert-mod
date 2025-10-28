@@ -23,16 +23,26 @@ open Pre_parser_aux
 module Rc_pp_aux = Rc_pre_parser_aux
 
 module SSet = Set.Make(String)
+module B = Rc_pp_aux.Bracket
 
-let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
-let ignored_keywords : SSet.t ref = ref SSet.empty
+let c_lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
+let c_ignored_keywords : SSet.t ref = ref SSet.empty
 
-let reserved_keyword loc id =
+let annot_lexicon : SSet.t = SSet.of_list [
+  ; "void"
+  ; "global"
+  ; "own"
+  ; "shr"
+  ; "frac" ]
+
+let annot_reserved name = SSet.mem name annot_lexicon
+
+let c_reserved_keyword loc id =
   Diagnostics.fatal_error (loc.Cabs.filename, loc.Cabs.lineno)
     "illegal use of reserved keyword `%s'" id
 
 let () =
-  List.iter (fun (key, builder) -> Hashtbl.add lexicon key builder)
+  List.iter (fun (key, builder) -> Hashtbl.add c_lexicon key builder)
     [ 
       ("_Alignas", fun loc -> ALIGNAS loc);
       ("_Alignof", fun loc -> ALIGNOF loc);
@@ -99,7 +109,7 @@ let () =
       ("while", fun loc -> WHILE loc)];
   if Configuration.system <> "diab" then
     (* We can ignore the __extension__ GCC keyword. *)
-    ignored_keywords := SSet.add "__extension__" !ignored_keywords
+    c_ignored_keywords := SSet.add "__extension__" !c_ignored_keywords
 
 let init_ctx = SSet.of_list (List.map fst CBuiltins.builtins.C.builtin_typedefs)
 
@@ -270,12 +280,350 @@ module Buffer = struct
     Buffer.create 100
 end
 
+open Parser.MenhirLibParser.Inter
+
+let lexer tokens buffer : lexbuf -> Pre_parser.token = 
+  let bk_cxt : bracket_scope list ref = ref nil in
+  let push_yield e = Queue.push e tokens; e in
+  let digest = function 
+    | Pre_parser.PRE_BRACKETED_ROCQ qs -> begin 
+      bk_cxt := (None, qs, Rocq) :: !bk_ckt;
+      push_yield Pre_parser.ROCQ_WELL_BR_OPEN end
+    | Pre_parser.PRE_BRACKETED_IRIS qs -> begin
+      bk_cxt := (None, qs, Iris) :: !bk_cxt;
+      push_yield Pre_parser.IRIS_WELL_BR_OPEN end
+    | other -> push_yield other
+  in
+  let push_split scope rocq_opt iris_opt =
+    push_yield (map_scope rocq_opt iris_opt scope)
+  in
+  let nest_lb_of_string p s = 
+    let lb = Lexbuf.of_string s in 
+    lb.lex_curr_p <- p; 
+    p
+  in
+  fun base_lb ->
+    match !bk_cxt with
+    | (Some nest_lb, qs, scope) :: rest -> begin 
+      match tokenize nest_lb with
+      | Pre_parser.EOF -> begin 
+        bk_cxt := (None, qs, scope) :: rest;
+        push_yield Pre_parser.ANTI_CLOS end
+      | e -> 
+        digest e end
+    | (None, PreQuot (s, pos) :: qs, scope) :: rest -> begin
+      bk_cxt := (None, qs, scope) :: rest;
+      push_yield (Pre_parser.QUOT (s, loc_of_start_p pos)) end
+    | (None, PreAnti (s, pos) :: qs, scope) :: rest -> begin 
+      let nest_lb = nest_lb_of_string pos s in
+      bk_cxt := (Some nest_lb, qs, scope) :: rest;
+      push_yield Pre_parser.ANTI_OPEN end
+    | (None, nil, scope) :: rest -> begin 
+      bk_cxt := rest;
+      push_split scope Pre_parser.ROCQ_WELL_BR_CLOS Pre_parser.IRIS_WELL_BR_CLOS end
+    | nil -> begin 
+      let token = digest (tokenize base_lb) in
+      let start_p = lexbuf.lex_start_p in 
+      let end_p = lexbuf.lex_curr_p in 
+      buffer := ErrorReports.update !buffer (start_p, end_p);
+      token end
+
+let invoke_rc_pre_parser loc text decl tokens buffer = 
+  let lexbuf = Lexing.from_string text in 
+  lexbuf.lex_curr_p <- 
+    { lexbuf.lex_curr_p with 
+      pos_fname = loc.filename
+    ; pos_lnum = loc.lineno
+    ; pos_cnum = loc.byteno };
+  let module I = Pre_parser.MenhirInterpreter in
+  let module M = Pre_parser.Incremental in
+  let checkpoint = 
+    let parser = begin 
+      match decl with 
+      | Parameters _   -> M.named_rocq_expr
+      | Refined_by _   -> M.named_rocq_expr
+      | Exists _       -> M.named_rocq_expr
+      | Let _          -> M.let_anno
+      | Constraints _  -> M.constr
+      | Args _         -> M.full_type_expr
+      | Requires _     -> M.constr
+      | Ensures _      -> M.constr
+      | Inv_vars _     -> M.named_full_type_expr
+      | Annot_args _   -> M.annot_args_anno
+      | Tactics _      -> M.raw_text
+      | Lemmas _       -> M.raw_text
+      | Typedef _      -> M.named_full_type_expr
+      | Size _         -> M.rocq_expr
+      | Tagged_union _ -> M.rocq_expr
+      | Union_tag _    -> M.union_tag_anno
+      | Field _        -> M.full_type_expr
+      | Global _       -> M.full_type_expr
+      | Returns _      -> M.full_type_expr
+      | Manual_proof _ -> M.manual_proof_anno
+      | Annot _        -> M.raw_text
+      | Unfold_order _ -> M.integer
+      | Immovable _ | Asrt _ | Trust_me _ | Skip _ 
+      | Block _ | Full_block _ | Inlined _ ->
+        assert false (* cannot be invoked by `annot` *)
+    end in 
+    parser lexbuf.lex_curr_p  
+  and supplier = 
+    let lexer = begin 
+      match decl with 
+      | Lemmas _ | Typedef _ | Annot _ ->
+        passthrough
+      | _ ->
+        lexer tokens buffer
+    end in 
+    I.lexer_lexbuf_to_supplier lexer lexbuf 
+  and succeed () = ()
+  and fail checkpoint = 
+    Diagnostics.fatal_error_raw "%s" (ErrorReports.report text !buffer checkpoint)
+  in
+  I.loop_handle succeed fail supplier checkpoint
+
+let compute_buffer tokens transf = fun () ->
+  let loop t = Buf_cons (t, Lazy.from_fun go) in
+  loop (transf (Queue.pop tokens)) 
+
+let annot : Rc_pp_aux.decl -> Rc_pp_aux.arguments : buffer = 
+  fun decl args -> begin 
+    let tokens = Queue.create () in
+    let buffer = ref ErrorReports.Zero in
+    let compute_buffer = compute_buffer tokens from_pre in
+    let args = 
+      match args with 
+      | Zero -> begin
+        Queue.push (Rc_pre_parser.ZERO_ARG_DECL decl) tokens;
+        [] end
+      | One a -> begin
+        Queue.push (Rc_pre_parser.ONE_ARG_DECL decl) tokens;
+        [a] end
+      | Many aa -> begin
+        Queue.push (Rc_pre_parser.MANY_ARG_DECL decl) tokens;
+        aa end 
+    in 
+    let rec push_all = function 
+    | (loc, s) :: nil  -> begin
+      invoke_rc_pre_parser loc s decl tokens buffer;
+      Queue.push Rc_pre_parser.ARG_END tokens end
+    | (loc, s) :: rest -> begin
+      invoke_rc_pre_parser loc s decl tokens buffer;
+      Queue.push Rc_pre_parser.ARG_SEP tokens;
+      push_all rest end
+    | nil ->
+      Queue.push Rc_pre_parser.ARG_END tokens
+    in 
+    push_all args;
+    Lazy.from_fun compute_buffer
+  end
+
+(* This is the main entry point to the lexer. *)
+
+let lexer : lexbuf -> Pre_parser.token =
+  fun lexbuf ->
+    if lexbuf.lex_curr_p.pos_cnum = lexbuf.lex_curr_p.pos_bol then
+      initial_linebegin lexbuf
+    else
+      initial lexbuf
+
+(* [lexer tokens buffer] is a new lexer, which wraps [lexer], and also: 1-
+    records the token stream into the FIFO queue [tokens] and 2- records the
+    start and end positions of the last two tokens in the two-place buffer
+    [buffer] and 3- duplicates identifier tokens into PRE_NAME and
+    VAR/TYPE_NAME. *)
+
+let lexer tokens buffer : lexbuf -> Pre_parser.token =
+  let curr_id = ref None in
+  types_context := init_ctx;
+  fun lexbuf ->
+    match !curr_id with
+    | Some id ->
+      curr_id := None;
+      let loc = loc_of_lb lexbuf in
+      let token =
+        if SSet.mem id !types_context then Pre_parser.TYPEDEF_NAME (id, ref TypedefId, loc)
+        else Pre_parser.VAR_NAME (id, ref VarId, loc)
+      in
+      Queue.push token tokens;
+      token
+    | None ->
+      let token = lexer lexbuf in
+      begin match token with
+      | PRE_NAME id -> curr_id := Some id
+      | _ -> Queue.push token tokens
+      end;
+      let startp = lexbuf.lex_start_p
+      and endp = lexbuf.lex_curr_p in
+      buffer := ErrorReports.update !buffer (startp, endp);
+      token
+
+(* [invoke_pre_parser] is in charge of calling the pre_parser. It uses
+    the incremental API, which allows us to do our own error handling. *)
+
+let invoke_pre_parser filename text lexer buffer =
+  let lexbuf = Lexing.from_string text in
+  lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = filename; pos_lnum = 1};
+  let module I = Pre_parser.MenhirInterpreter in
+  let checkpoint = Pre_parser.Incremental.translation_unit_file lexbuf.lex_curr_p
+  and supplier = I.lexer_lexbuf_to_supplier lexer lexbuf
+  and succeed () = ()
+  and fail checkpoint =
+    Diagnostics.fatal_error_raw "%s" (ErrorReports.report text !buffer checkpoint)
+  in
+  I.loop_handle succeed fail supplier checkpoint
+
+(* [tokens_stream filename text] runs the pre_parser and produces a stream
+    of (appropriately classified) tokens. *)
+
+let tokens_stream filename text : buffer =
+  let tokens = Queue.create () in
+  let buffer = ref ErrorReports.Zero in
+  invoke_pre_parser filename text (lexer tokens buffer) buffer;
+  let rec compute_buffer () =
+    let loop t = Buf_cons (t, Lazy.from_fun compute_buffer) in
+    match Queue.pop tokens with
+    | Pre_parser.ADD_ASSIGN loc -> loop (Parser.ADD_ASSIGN loc)
+    | Pre_parser.AND loc -> loop (Parser.AND loc)
+    | Pre_parser.ANDAND loc -> loop (Parser.ANDAND loc)
+    | Pre_parser.AND_ASSIGN loc -> loop (Parser.AND_ASSIGN loc)
+    | Pre_parser.AUTO loc -> loop (Parser.AUTO loc)
+    | Pre_parser.BANG loc -> loop (Parser.BANG loc)
+    | Pre_parser.BAR loc -> loop (Parser.BAR loc)
+    | Pre_parser.BARBAR loc -> loop (Parser.BARBAR loc)
+    | Pre_parser.UNDERSCORE_BOOL loc -> loop (Parser.UNDERSCORE_BOOL loc)
+    | Pre_parser.BREAK loc -> loop (Parser.BREAK loc)
+    | Pre_parser.BUILTIN_VA_ARG loc -> loop (Parser.BUILTIN_VA_ARG loc)
+    | Pre_parser.BUILTIN_OFFSETOF loc -> loop (Parser.BUILTIN_OFFSETOF loc)
+    | Pre_parser.CASE loc -> loop (Parser.CASE loc)
+    | Pre_parser.CHAR loc -> loop (Parser.CHAR loc)
+    | Pre_parser.COLON loc -> loop (Parser.COLON loc)
+    | Pre_parser.COMMA loc -> loop (Parser.COMMA loc)
+    | Pre_parser.CONST loc -> loop (Parser.CONST loc)
+    | Pre_parser.CONSTANT (cst, loc) -> loop (Parser.CONSTANT (cst, loc))
+    | Pre_parser.CONTINUE loc -> loop (Parser.CONTINUE loc)
+    | Pre_parser.DEC loc -> loop (Parser.DEC loc)
+    | Pre_parser.DEFAULT loc -> loop (Parser.DEFAULT loc)
+    | Pre_parser.DIV_ASSIGN loc -> loop (Parser.DIV_ASSIGN loc)
+    | Pre_parser.DO loc -> loop (Parser.DO loc)
+    | Pre_parser.DOT loc -> loop (Parser.DOT loc)
+    | Pre_parser.DOUBLE loc -> loop (Parser.DOUBLE loc)
+    | Pre_parser.ELLIPSIS loc -> loop (Parser.ELLIPSIS loc)
+    | Pre_parser.ELSE loc -> loop (Parser.ELSE loc)
+    | Pre_parser.ENUM loc -> loop (Parser.ENUM loc)
+    | Pre_parser.EOF -> loop (Parser.EOF ())
+    | Pre_parser.EQ loc -> loop (Parser.EQ loc)
+    | Pre_parser.EQEQ loc -> loop (Parser.EQEQ loc)
+    | Pre_parser.EXTERN loc -> loop (Parser.EXTERN loc)
+    | Pre_parser.FLOAT loc -> loop (Parser.FLOAT loc)
+    | Pre_parser.FLOAT16 loc -> loop (Parser.FLOAT16 loc)
+    | Pre_parser.FOR loc -> loop (Parser.FOR loc)
+    | Pre_parser.GENERIC loc -> loop (Parser.GENERIC loc)
+    | Pre_parser.GEQ loc -> loop (Parser.GEQ loc)
+    | Pre_parser.GOTO loc -> loop (Parser.GOTO loc)
+    | Pre_parser.GT loc -> loop (Parser.GT loc)
+    | Pre_parser.HAT loc -> loop (Parser.HAT loc)
+    | Pre_parser.IF loc -> loop (Parser.IF_ loc)
+    | Pre_parser.INC loc -> loop (Parser.INC loc)
+    | Pre_parser.INLINE loc -> loop (Parser.INLINE loc)
+    | Pre_parser.INT loc -> loop (Parser.INT loc)
+    | Pre_parser.LBRACE loc -> loop (Parser.LBRACE loc)
+    | Pre_parser.LBRACK loc -> loop (Parser.LBRACK loc)
+    | Pre_parser.LEFT loc -> loop (Parser.LEFT loc)
+    | Pre_parser.LEFT_ASSIGN loc -> loop (Parser.LEFT_ASSIGN loc)
+    | Pre_parser.LEQ loc -> loop (Parser.LEQ loc)
+    | Pre_parser.LONG loc -> loop (Parser.LONG loc)
+    | Pre_parser.LPAREN loc -> loop (Parser.LPAREN loc)
+    | Pre_parser.LT loc -> loop (Parser.LT loc)
+    | Pre_parser.MINUS loc -> loop (Parser.MINUS loc)
+    | Pre_parser.MOD_ASSIGN loc -> loop (Parser.MOD_ASSIGN loc)
+    | Pre_parser.MUL_ASSIGN loc -> loop (Parser.MUL_ASSIGN loc)
+    | Pre_parser.NEQ loc -> loop (Parser.NEQ loc)
+    | Pre_parser.NORETURN loc -> loop (Parser.NORETURN loc)
+    | Pre_parser.OR_ASSIGN loc -> loop (Parser.OR_ASSIGN loc)
+    | Pre_parser.PACKED loc -> loop (Parser.PACKED loc)
+    | Pre_parser.PERCENT loc -> loop (Parser.PERCENT loc)
+    | Pre_parser.PLUS loc -> loop (Parser.PLUS loc)
+    | Pre_parser.PTR loc -> loop (Parser.PTR loc)
+    | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
+    | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
+    | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
+    | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
+    | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
+    | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
+    | Pre_parser.RIGHT loc -> loop (Parser.RIGHT loc)
+    | Pre_parser.RIGHT_ASSIGN loc -> loop (Parser.RIGHT_ASSIGN loc)
+    | Pre_parser.RPAREN loc -> loop (Parser.RPAREN loc)
+    | Pre_parser.SEMICOLON loc -> loop (Parser.SEMICOLON loc)
+    | Pre_parser.SHORT loc -> loop (Parser.SHORT loc)
+    | Pre_parser.SIGNED loc -> loop (Parser.SIGNED loc)
+    | Pre_parser.SIZEOF loc -> loop (Parser.SIZEOF loc)
+    | Pre_parser.SLASH loc -> loop (Parser.SLASH loc)
+    | Pre_parser.STAR loc -> loop (Parser.STAR loc)
+    | Pre_parser.STATIC loc -> loop (Parser.STATIC loc)
+    | Pre_parser.STATIC_ASSERT loc -> loop (Parser.STATIC_ASSERT loc)
+    | Pre_parser.STRING_LITERAL (enc, str, loc) ->
+        (* Merge consecutive string literals *)
+        let rec doConcat enc str =
+          match Queue.peek tokens with
+          | Pre_parser.STRING_LITERAL (enc', str', loc') ->
+              ignore (Queue.pop tokens);
+              let (enc'', str'') = doConcat enc' str' in
+              if str'' <> []
+              then (combine_encodings loc enc enc'', str @ str'')
+              else (enc, str)
+          | _ -> (enc, str)
+          | exception Queue.Empty -> (enc, str)
+        in
+        let (enc', str') = doConcat enc str in
+        loop (Parser.STRING_LITERAL ((enc', str'), loc))
+    | Pre_parser.STRUCT loc -> loop (Parser.STRUCT loc)
+    | Pre_parser.SUB_ASSIGN loc -> loop (Parser.SUB_ASSIGN loc)
+    | Pre_parser.SWITCH loc -> loop (Parser.SWITCH loc)
+    | Pre_parser.TILDE loc -> loop (Parser.TILDE loc)
+    | Pre_parser.TYPEDEF loc -> loop (Parser.TYPEDEF loc)
+    | Pre_parser.TYPEDEF_NAME (id, typ, loc)
+    | Pre_parser.VAR_NAME (id, typ, loc) ->
+        begin match !typ with
+        | VarId -> loop (Parser.VAR_NAME (id, loc))
+        | TypedefId -> loop (Parser.TYPEDEF_NAME (id, loc))
+        | OtherId -> loop (Parser.OTHER_NAME (id, loc))
+        end
+    | Pre_parser.UNION loc -> loop (Parser.UNION loc)
+    | Pre_parser.UNSIGNED loc -> loop (Parser.UNSIGNED loc)
+    | Pre_parser.VOID loc -> loop (Parser.VOID loc)
+    | Pre_parser.VOLATILE loc -> loop (Parser.VOLATILE loc)
+    | Pre_parser.WHILE loc -> loop (Parser.WHILE loc)
+    | Pre_parser.XOR_ASSIGN loc -> loop (Parser.XOR_ASSIGN loc)
+    | Pre_parser.ALIGNAS loc -> loop (Parser.ALIGNAS loc)
+    | Pre_parser.ALIGNOF loc -> loop (Parser.ALIGNOF loc)
+    | Pre_parser.ATTRIBUTE loc -> loop (Parser.ATTRIBUTE loc)
+    | Pre_parser.RCANNO (a, loc) -> loop (Parser.RCANNO (a, loc))
+    | Pre_parser.ASM loc -> loop (Parser.ASM loc)
+    | Pre_parser.PRAGMA (s, loc) -> loop (Parser.PRAGMA (s, loc))
+    | Pre_parser.PRE_NAME _ -> assert false
+  in
+  Lazy.from_fun compute_buffer
+
 }
 
 (* Identifiers *)
 let digit = ['0'-'9']
+let integer = digit +
 let hexadecimal_digit = ['0'-'9' 'A'-'F' 'a'-'f']
 let nondigit = ['_' 'a'-'z' 'A'-'Z']
+let ident_base = nondigit ( digit | nondigit ) *
+
+let udot = 
+    ['\x00' - '\x7F'] 
+  | ['\xC0' - '\xDF'] ['\x80' - '\xBF'] 
+  | ['\xE0' - '\xEF'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] 
+  | ['\xF0' - '\xF7'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] ['\x80' - '\xBF']
+
+let non_ascii = 
+    ['\xC0' - '\xDF'] ['\x80' - '\xBF'] 
+  | ['\xE0' - '\xEF'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] 
+  | ['\xF0' - '\xF7'] ['\x80' - '\xBF'] ['\x80' - '\xBF'] ['\x80' - '\xBF']
 
 let hex_quad = hexadecimal_digit hexadecimal_digit
                  hexadecimal_digit hexadecimal_digit
@@ -327,6 +675,7 @@ let pat_rc_decl_zero_arg =
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
+let whitespace_char = [' ' '\t' '\n' '\011' '\012' '\r']
 
 (* Integer constants *)
 let nonzero_digit = ['1'-'9']
@@ -482,7 +831,7 @@ rule initial = parse
     if SSet.mem id !ignored_keywords then
       initial lexbuf
     else
-      try Hashtbl.find lexicon id (loc_of_lb lexbuf)
+      try Hashtbl.find c_lexicon id (loc_of_lb lexbuf)
       with Not_found -> PRE_NAME id }
   | eof                           { EOF }
   | _ as c                        { fatal_error lexbuf "invalid symbol %C" c }
@@ -522,6 +871,7 @@ and rc_decl = parse
                                       rc_rest [rc_literal start_p buf lexbuf] lexbuf 
                                     in 
                                     rc_open_end decl args lexbuf }
+
 and rc_rest args = parse
   | "," whitespace_char_no_newline * "\""  
                                   { let buf = Bytes.default_sized () in
@@ -531,8 +881,177 @@ and rc_rest args = parse
 
 and rc_open_end decl args = parse 
   | ")"                           { rc_clos_end decl args lexbuf }
+
 and rc_clos_end decl args = parse
   | "]]"                          { RcLexer.annot decl args }
+
+and rc_char buf = parse
+  | ['\x00'-'\x7F'] as c1
+      { Buffer.add_chars [c1] buf }
+  | (['\xC0'-'\xDF'] as c1) (['\x80'-'\xBF'] as c2)
+      { let i = (Char.code c1 land 0b00011111) lsl 6 + 
+                (Char.code c2 land 0b00111111) in 
+        utf8_check lexbuf 0x80 i;
+        Buffer.add_chars [c1; c2] buf }
+  | (['\xE0'-'\xEF'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3)
+      { let i = (Char.code c1 land 0b00001111) lsl 12 +
+                (Char.code c2 land 0b00111111) lsl 6 + 
+                (Char.code c3 land 0b00111111) in 
+        utf8_check lexbuf 0x800 i;
+        Buffer.add_chars [c1; c2; c3] buf }
+  | (['\xF0'-'\xF7'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3) (['\x80'-'\xBF'] as c4)
+      { let i = (Char.code c1 land 0b00000111) lsl 18 + 
+                (Char.code c2 land 0b00111111) lsl 12 + 
+                (Char.code c3 land 0b00111111) lsl 6 + 
+                (Char.code c4 land 0b00111111) in
+        utf8_check lexbuf 0x800 i;
+        Buffer.add_chars [c1; c2; c3; c4] buf }
+  | _ as c
+     { fatal_error lexbuf Diagnostics.Invalid_UTF8
+          "Invalid UTF8 encoding: byte 0x%02x" (Char.code c) }
+
+and rc_literal start_p buf = parse
+  | '\"'       { (loc_of_start_p start_p, Buffer.contents buf) }
+  | eof { fatal_error lexbuf "missing terminating '\"' character" }
+  | ""         { rc_char buf; rc_literal start_p buf lexbuf }
+
+and rocq_term_quot bk = parse 
+  | non_ascii as s         { B.add_string bk s; 
+                             rocq_term_quot bk lexbuf }
+  | "!{"                   { let start_p = Some lexbuf.lex_curr_p in
+                             begin try B.enter_anti bk ~start_p with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             rocq_term_anti bk lexbuf }
+  | "{" as s               { begin try B.enter_quot bk with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
+                             rocq_term_quot bk lexbuf }
+  | "}" as s               { let outer = B.outermost bk in 
+                             B.exit_quot bk;
+                             try begin 
+                               if outer then begin
+                                 B.finalize bk 
+                               end else begin 
+                                   B.add_string bk s;
+                                   rocq_term_quot bk lexbuf end
+                               end with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
+                             rocq_term_quot bk lexbuf }
+
+and rocq_term_anti bk = parse
+  | non_ascii as s         { B.add_string bk s;
+                             rocq_term_anti bk lexbuf }
+  | "{" as s               { begin try B.enter_anti with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
+                             rocq_term_anti bk lexbuf }
+  | "}" as s               { let outer = B.outermost bk in 
+                             let start_p = if outer then Some lexbuf.lex_curr_p
+                                                         else None in
+                             try begin 
+                               B.exit_anti bk ~start_p;
+                               if not outer then B.add_string bk s;
+                               if outer then rocq_term_quot bk lexbuf
+                                        else rocq_term_anti bk lexbuf
+                             end with Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
+                             rocq_term_anti bk lexbuf }
+
+and iris_term_quot bk = parse 
+  | non_ascii as s         { B.add_string bk s; 
+                             iris_term_quot bk lexbuf }
+  | "!{" as s              { let start_p = Some lexbuf.lex_curr_p in 
+                             begin try B.enter_anti bk ~start_p with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             iris_term_anti bk lexbuf }
+  | "[" as s               { begin try B.enter_quot bk with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
+                             iris_term_quot bk lexbuf }
+  | "]" as s               { try begin
+                               let outer = B.outermost bk in
+                               B.exit_quot bk;
+                               if outer then begin
+                                 B.finalize bk 
+                               end else begin 
+                                 B.add_string bk s;
+                                 iris_term_quot bk lexbuf
+                               end
+                             end with Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  _ as c                   { B.add_string bk c;
+                             iris_term_quot bk lexbuf }
+
+and iris_term_anti bk = parse
+  | non_ascii as s         { B.add_string bk s;
+                             iris_term_anti bk lexbuf }
+  | "{"                    { begin try B.enter_anti bk with 
+                             | Ill_bracketed es ->
+                               fatal_error lexbuf es end;
+                             B.add_string bk s;
+                             iris_term_anti bk }
+  | "}" as s               { try begin
+                               let outer = B.outermost bk in
+                               if not outer then B.add_string bk s;
+                               let start_p = if outer then Some lexbuf.lex_curr_p
+                                                      else None in
+                               B.exit_anti bk ~start_p; 
+                               if outer then iris_term_quot bk lexbuf
+                                        else iris_term_anti bk lexbuf
+                             end with Ill_bracketed es ->
+                               fatal_error lexbuf es }
+  | eof                    { fatal_error lexbuf "reached eof inside nested brackets" }
+  | _ as c                 { B.add_string bk c;
+                             iris_term_anti bk lexbuf }
+
+and tokenize = parse
+  | eof                    { Pre_parser.EOF }
+  | whitespace_char +      { tokenize lexbuf }
+  | integer                { Pre_parser.INTEGER (int_of_string i, loc_of_lb lexbuf) }
+  | "&" ident_base "*"     { fatal_error lexbuf "invalid RefinedC identifier" }
+  | "&" (ident_base as n)  { if clash n then fatal_error lexbuf 
+                               "reserved keyword used as RefinedC identifier";
+                             Pre_parser.TY_NAME ("&" ^ n, loc_of_lb lexbuf) }
+  | "void*" as n           { Pre_parser.IDENT (n, loc_of_lb lexbuf) }
+  | (ident_base as n) "*"  { fatal_error lexbuf "invalid RefinedC identifier" }
+  | ident_base as n        { if clash_n then fatal_error lexbuf 
+                               "reserved keyword used as RefinedC identifier";
+                             Pre_parser.TY_NAME_OR_IDENT (n, loc_of_lb lexbuf) }
+  | "global"               { Pre_parser.GLOBAL (loc_of_lb lexbuf) }
+  | "own"                  { Pre_parser.OWN (loc_of_lb lexbuf) }
+  | "shr"                  { Pre_parser.SHARE (loc_of_lb lexbuf) }
+  | "frac"                 { Pre_parser.FRAC (loc_of_lb lexbuf) }
+  | "..."                  { Pre_parser.DOTTHREE (loc_of_lb lexbuf) }
+  | "."                    { Pre_parser.DOTONE (loc_of_lb lexbuf) }
+  | "<"                    { Pre_parser.LANGLE (loc_of_lb lexbuf) }
+  | ">"                    { Pre_parser.RANGLE (loc_of_lb lexbuf) }
+  | "@"                    { Pre_parser.AT (loc_of_lb lexbuf) }
+  | "∃"                    { Pre_parser.EXISTS (loc_of_lb lexbuf) }
+  | ":"                    { Pre_parser.COLON (loc_of_lb lexbuf) }
+  | "("                    { Pre_parser.LPAREN (loc_of_lb lexbuf) }
+  | ")"                    { Pre_parser.RPAREN (loc_of_lb lexbuf) }
+  | "λ"                    { Pre_parser.LAMBDA (loc_of_lb lexbuf) }
+  | ","                    { Pre_parser.COMMA (loc_of_lb lexbuf) }
+  | "{"                    { let start_p = lexbuf.lex_curr_p in
+                             let bk = B.create start_p in 
+                             let qs = rocq_term_quot bk lexbuf in 
+                             Pre_parser.PRE_BRACKETED_ROCQ qs }
+  | "["                    { let start_p = lexbuf.lex_curr_p in 
+                             let bk = B.create start_p in 
+                             let qs = iris_term_quot bk lexbuf in
+                             Pre_parser.PRE_BRACKETED_IRIS qs }
+  | udot as c              { Pre_parser.UCHAR (c, loc_of_lb lexbuf) }
 
 and char = parse
   | universal_character_name
@@ -582,31 +1101,6 @@ and char = parse
        Esc (Int64.of_int (Char.code c)) (* re-encode as-is *)
      }
 
-and rc_char buf = parse
-  | ['\x00'-'\x7F'] as c1
-      { Buffer.add_chars [c1] buf }
-  | (['\xC0'-'\xDF'] as c1) (['\x80'-'\xBF'] as c2)
-      { let i = (Char.code c1 land 0b00011111) lsl 6 + 
-                (Char.code c2 land 0b00111111) in 
-        utf8_check lexbuf 0x80 i;
-        Buffer.add_chars [c1; c2] buf }
-  | (['\xE0'-'\xEF'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3)
-      { let i = (Char.code c1 land 0b00001111) lsl 12 +
-                (Char.code c2 land 0b00111111) lsl 6 + 
-                (Char.code c3 land 0b00111111) in 
-        utf8_check lexbuf 0x800 i;
-        Buffer.add_chars [c1; c2; c3] buf }
-  | (['\xF0'-'\xF7'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3) (['\x80'-'\xBF'] as c4)
-      { let i = (Char.code c1 land 0b00000111) lsl 18 + 
-                (Char.code c2 land 0b00111111) lsl 12 + 
-                (Char.code c3 land 0b00111111) lsl 6 + 
-                (Char.code c4 land 0b00111111) in
-        utf8_check lexbuf 0x800 i;
-        Buffer.add_chars [c1; c2; c3; c4] buf }
-  | _ as c
-     { fatal_error lexbuf Diagnostics.Invalid_UTF8
-          "Invalid UTF8 encoding: byte 0x%02x" (Char.code c) }
-
 and char_literal start_p accu = parse
   | '\''       { let chars = List.rev accu in 
                  CONSTANT (Cabs.CONST_CHAR(enc, chars), loc_of_start_p start_p) }
@@ -618,11 +1112,6 @@ and string_literal start_p enc accu = parse
                  STRING_LITERAL(enc, chars, loc_of_start_p start_p) }
   | '\n' | eof { fatal_error lexbuf "missing terminating '\"' character" }
   | ""         { let c = char lexbuf in string_literal start_p enc (add_char enc c accu) lexbuf }
-
-and rc_literal start_p buf = parse
-  | '\"'       { (loc_of_start_p start_p, Buffer.contents buf) }
-  | eof { fatal_error lexbuf "missing terminating '\"' character" }
-  | ""         { rc_char buf; rc_literal start_p buf lexbuf }
 
 (* We assume gcc -E syntax but try to tolerate variations. *)
 and hash = parse
@@ -670,195 +1159,3 @@ and singleline_comment = parse
   | '\n'   { new_line lexbuf }
   | eof    { () }
   | _      { singleline_comment lexbuf }
-
-{
-  open Parser.MenhirLibParser.Inter
-
-  (* This is the main entry point to the lexer. *)
-
-  let lexer : lexbuf -> Pre_parser.token =
-    fun lexbuf ->
-      if lexbuf.lex_curr_p.pos_cnum = lexbuf.lex_curr_p.pos_bol then
-        initial_linebegin lexbuf
-      else
-        initial lexbuf
-
-  (* [lexer tokens buffer] is a new lexer, which wraps [lexer], and also: 1-
-     records the token stream into the FIFO queue [tokens] and 2- records the
-     start and end positions of the last two tokens in the two-place buffer
-     [buffer] and 3- duplicates identifier tokens into PRE_NAME and
-     VAR/TYPE_NAME. *)
-
-  let lexer tokens buffer : lexbuf -> Pre_parser.token =
-    let curr_id = ref None in
-    types_context := init_ctx;
-    fun lexbuf ->
-      match !curr_id with
-      | Some id ->
-        curr_id := None;
-        let loc = loc_of_lb lexbuf in
-        let token =
-          if SSet.mem id !types_context then Pre_parser.TYPEDEF_NAME (id, ref TypedefId, loc)
-          else Pre_parser.VAR_NAME (id, ref VarId, loc)
-        in
-        Queue.push token tokens;
-        token
-      | None ->
-        let token = lexer lexbuf in
-        begin match token with
-        | PRE_NAME id -> curr_id := Some id
-        | _ -> Queue.push token tokens
-        end;
-        let startp = lexbuf.lex_start_p
-        and endp = lexbuf.lex_curr_p in
-        buffer := ErrorReports.update !buffer (startp, endp);
-        token
-
-  (* [invoke_pre_parser] is in charge of calling the pre_parser. It uses
-     the incremental API, which allows us to do our own error handling. *)
-
-  let invoke_pre_parser filename text lexer buffer =
-    let lexbuf = Lexing.from_string text in
-    lexbuf.lex_curr_p <- {lexbuf.lex_curr_p with pos_fname = filename; pos_lnum = 1};
-    let module I = Pre_parser.MenhirInterpreter in
-    let checkpoint = Pre_parser.Incremental.translation_unit_file lexbuf.lex_curr_p
-    and supplier = I.lexer_lexbuf_to_supplier lexer lexbuf
-    and succeed () = ()
-    and fail checkpoint =
-      Diagnostics.fatal_error_raw "%s" (ErrorReports.report text !buffer checkpoint)
-    in
-    I.loop_handle succeed fail supplier checkpoint
-
-  (* [tokens_stream filename text] runs the pre_parser and produces a stream
-     of (appropriately classified) tokens. *)
-
-  let tokens_stream filename text : buffer =
-    let tokens = Queue.create () in
-    let buffer = ref ErrorReports.Zero in
-    invoke_pre_parser filename text (lexer tokens buffer) buffer;
-    let rec compute_buffer () =
-      let loop t = Buf_cons (t, Lazy.from_fun compute_buffer) in
-      match Queue.pop tokens with
-      | Pre_parser.ADD_ASSIGN loc -> loop (Parser.ADD_ASSIGN loc)
-      | Pre_parser.AND loc -> loop (Parser.AND loc)
-      | Pre_parser.ANDAND loc -> loop (Parser.ANDAND loc)
-      | Pre_parser.AND_ASSIGN loc -> loop (Parser.AND_ASSIGN loc)
-      | Pre_parser.AUTO loc -> loop (Parser.AUTO loc)
-      | Pre_parser.BANG loc -> loop (Parser.BANG loc)
-      | Pre_parser.BAR loc -> loop (Parser.BAR loc)
-      | Pre_parser.BARBAR loc -> loop (Parser.BARBAR loc)
-      | Pre_parser.UNDERSCORE_BOOL loc -> loop (Parser.UNDERSCORE_BOOL loc)
-      | Pre_parser.BREAK loc -> loop (Parser.BREAK loc)
-      | Pre_parser.BUILTIN_VA_ARG loc -> loop (Parser.BUILTIN_VA_ARG loc)
-      | Pre_parser.BUILTIN_OFFSETOF loc -> loop (Parser.BUILTIN_OFFSETOF loc)
-      | Pre_parser.CASE loc -> loop (Parser.CASE loc)
-      | Pre_parser.CHAR loc -> loop (Parser.CHAR loc)
-      | Pre_parser.COLON loc -> loop (Parser.COLON loc)
-      | Pre_parser.COMMA loc -> loop (Parser.COMMA loc)
-      | Pre_parser.CONST loc -> loop (Parser.CONST loc)
-      | Pre_parser.CONSTANT (cst, loc) -> loop (Parser.CONSTANT (cst, loc))
-      | Pre_parser.CONTINUE loc -> loop (Parser.CONTINUE loc)
-      | Pre_parser.DEC loc -> loop (Parser.DEC loc)
-      | Pre_parser.DEFAULT loc -> loop (Parser.DEFAULT loc)
-      | Pre_parser.DIV_ASSIGN loc -> loop (Parser.DIV_ASSIGN loc)
-      | Pre_parser.DO loc -> loop (Parser.DO loc)
-      | Pre_parser.DOT loc -> loop (Parser.DOT loc)
-      | Pre_parser.DOUBLE loc -> loop (Parser.DOUBLE loc)
-      | Pre_parser.ELLIPSIS loc -> loop (Parser.ELLIPSIS loc)
-      | Pre_parser.ELSE loc -> loop (Parser.ELSE loc)
-      | Pre_parser.ENUM loc -> loop (Parser.ENUM loc)
-      | Pre_parser.EOF -> loop (Parser.EOF ())
-      | Pre_parser.EQ loc -> loop (Parser.EQ loc)
-      | Pre_parser.EQEQ loc -> loop (Parser.EQEQ loc)
-      | Pre_parser.EXTERN loc -> loop (Parser.EXTERN loc)
-      | Pre_parser.FLOAT loc -> loop (Parser.FLOAT loc)
-      | Pre_parser.FLOAT16 loc -> loop (Parser.FLOAT16 loc)
-      | Pre_parser.FOR loc -> loop (Parser.FOR loc)
-      | Pre_parser.GENERIC loc -> loop (Parser.GENERIC loc)
-      | Pre_parser.GEQ loc -> loop (Parser.GEQ loc)
-      | Pre_parser.GOTO loc -> loop (Parser.GOTO loc)
-      | Pre_parser.GT loc -> loop (Parser.GT loc)
-      | Pre_parser.HAT loc -> loop (Parser.HAT loc)
-      | Pre_parser.IF loc -> loop (Parser.IF_ loc)
-      | Pre_parser.INC loc -> loop (Parser.INC loc)
-      | Pre_parser.INLINE loc -> loop (Parser.INLINE loc)
-      | Pre_parser.INT loc -> loop (Parser.INT loc)
-      | Pre_parser.LBRACE loc -> loop (Parser.LBRACE loc)
-      | Pre_parser.LBRACK loc -> loop (Parser.LBRACK loc)
-      | Pre_parser.LEFT loc -> loop (Parser.LEFT loc)
-      | Pre_parser.LEFT_ASSIGN loc -> loop (Parser.LEFT_ASSIGN loc)
-      | Pre_parser.LEQ loc -> loop (Parser.LEQ loc)
-      | Pre_parser.LONG loc -> loop (Parser.LONG loc)
-      | Pre_parser.LPAREN loc -> loop (Parser.LPAREN loc)
-      | Pre_parser.LT loc -> loop (Parser.LT loc)
-      | Pre_parser.MINUS loc -> loop (Parser.MINUS loc)
-      | Pre_parser.MOD_ASSIGN loc -> loop (Parser.MOD_ASSIGN loc)
-      | Pre_parser.MUL_ASSIGN loc -> loop (Parser.MUL_ASSIGN loc)
-      | Pre_parser.NEQ loc -> loop (Parser.NEQ loc)
-      | Pre_parser.NORETURN loc -> loop (Parser.NORETURN loc)
-      | Pre_parser.OR_ASSIGN loc -> loop (Parser.OR_ASSIGN loc)
-      | Pre_parser.PACKED loc -> loop (Parser.PACKED loc)
-      | Pre_parser.PERCENT loc -> loop (Parser.PERCENT loc)
-      | Pre_parser.PLUS loc -> loop (Parser.PLUS loc)
-      | Pre_parser.PTR loc -> loop (Parser.PTR loc)
-      | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
-      | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
-      | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
-      | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
-      | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
-      | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
-      | Pre_parser.RIGHT loc -> loop (Parser.RIGHT loc)
-      | Pre_parser.RIGHT_ASSIGN loc -> loop (Parser.RIGHT_ASSIGN loc)
-      | Pre_parser.RPAREN loc -> loop (Parser.RPAREN loc)
-      | Pre_parser.SEMICOLON loc -> loop (Parser.SEMICOLON loc)
-      | Pre_parser.SHORT loc -> loop (Parser.SHORT loc)
-      | Pre_parser.SIGNED loc -> loop (Parser.SIGNED loc)
-      | Pre_parser.SIZEOF loc -> loop (Parser.SIZEOF loc)
-      | Pre_parser.SLASH loc -> loop (Parser.SLASH loc)
-      | Pre_parser.STAR loc -> loop (Parser.STAR loc)
-      | Pre_parser.STATIC loc -> loop (Parser.STATIC loc)
-      | Pre_parser.STATIC_ASSERT loc -> loop (Parser.STATIC_ASSERT loc)
-      | Pre_parser.STRING_LITERAL (enc, str, loc) ->
-          (* Merge consecutive string literals *)
-          let rec doConcat enc str =
-            match Queue.peek tokens with
-            | Pre_parser.STRING_LITERAL (enc', str', loc') ->
-               ignore (Queue.pop tokens);
-               let (enc'', str'') = doConcat enc' str' in
-               if str'' <> []
-               then (combine_encodings loc enc enc'', str @ str'')
-               else (enc, str)
-            | _ -> (enc, str)
-            | exception Queue.Empty -> (enc, str)
-          in
-          let (enc', str') = doConcat enc str in
-          loop (Parser.STRING_LITERAL ((enc', str'), loc))
-      | Pre_parser.STRUCT loc -> loop (Parser.STRUCT loc)
-      | Pre_parser.SUB_ASSIGN loc -> loop (Parser.SUB_ASSIGN loc)
-      | Pre_parser.SWITCH loc -> loop (Parser.SWITCH loc)
-      | Pre_parser.TILDE loc -> loop (Parser.TILDE loc)
-      | Pre_parser.TYPEDEF loc -> loop (Parser.TYPEDEF loc)
-      | Pre_parser.TYPEDEF_NAME (id, typ, loc)
-      | Pre_parser.VAR_NAME (id, typ, loc) ->
-          begin match !typ with
-          | VarId -> loop (Parser.VAR_NAME (id, loc))
-          | TypedefId -> loop (Parser.TYPEDEF_NAME (id, loc))
-          | OtherId -> loop (Parser.OTHER_NAME (id, loc))
-          end
-      | Pre_parser.UNION loc -> loop (Parser.UNION loc)
-      | Pre_parser.UNSIGNED loc -> loop (Parser.UNSIGNED loc)
-      | Pre_parser.VOID loc -> loop (Parser.VOID loc)
-      | Pre_parser.VOLATILE loc -> loop (Parser.VOLATILE loc)
-      | Pre_parser.WHILE loc -> loop (Parser.WHILE loc)
-      | Pre_parser.XOR_ASSIGN loc -> loop (Parser.XOR_ASSIGN loc)
-      | Pre_parser.ALIGNAS loc -> loop (Parser.ALIGNAS loc)
-      | Pre_parser.ALIGNOF loc -> loop (Parser.ALIGNOF loc)
-      | Pre_parser.ATTRIBUTE loc -> loop (Parser.ATTRIBUTE loc)
-      | Pre_parser.RCANNO (a, loc) -> loop (Parser.RCANNO (a, loc))
-      | Pre_parser.ASM loc -> loop (Parser.ASM loc)
-      | Pre_parser.PRAGMA (s, loc) -> loop (Parser.PRAGMA (s, loc))
-      | Pre_parser.PRE_NAME _ -> assert false
-    in
-    Lazy.from_fun compute_buffer
-
-}

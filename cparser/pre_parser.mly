@@ -51,7 +51,7 @@
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
 %token<RcAnno.t * Cabs.loc> RCANNO
-%token<string * Cabs.loc> PRAGMA
+%token<string * Cabs.loc> PRAGMA TY_NAME IDENT TY_NAME_OR_IDENT UCHAR QUOT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
   COLON AND MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN LEFT_ASSIGN
@@ -62,8 +62,12 @@
   UNDERSCORE_BOOL CONST VOLATILE VOID STRUCT UNION ENUM CASE DEFAULT IF ELSE
   SWITCH WHILE DO FOR GOTO CONTINUE BREAK RETURN BUILTIN_VA_ARG ALIGNOF
   ATTRIBUTE ALIGNAS PACKED ASM BUILTIN_OFFSETOF STATIC_ASSERT GENERIC
-
-%token EOF
+  GLOBAL OWN SHARE FRAC DOTTHREE DOTONE LANGLE RANGLE AT EXISTS
+  COLON LPAREN RPAREN LAMBDA COMMA
+%token EOF ROCQ_WELL_BR_OPEN ROCQ_WELL_BR_CLOS IRIS_WELL_BR_OPEN
+  IRIS_WELL_BR_CLOS ANTI_OPEN ANTI_CLOS 
+%token<Rc_pp_aux.quote> PRE_BRACKETED_ROCQ PRE_BRACKETED_IRIS
+%token<int * Cabs.loc> INTEGER
 
 (* These precedence declarations solve the conflict in the following
    declaration:
@@ -83,6 +87,17 @@
 %nonassoc ELSE
 
 %start<unit> translation_unit_file
+  let_anno 
+  annot_args_anno
+  union_tag_anno
+  manual_proof_anno
+  named_rocq_expr
+  constr
+  full_type_expr
+  named_full_type_expr
+  raw_text
+  rocq_expr
+  integer
 
 (* The following declarations cause certain nonterminal symbols to be
    reduced when an error is detected. This replaces error actions in
@@ -420,20 +435,20 @@ expression:
 (* The phantom parameter is either [block_item], which means we are
    definitely reading a declaration, or [external_declaration], which
    means we could also be reading the beginning of a function definition. *)
-declaration(phantom, anno_cxt):
-| declaration_specifiers(declaration(phantom, anno_cxt)) init_declarator_list(anno_cxt)?    SEMICOLON
-| declaration_specifiers_typedef               typedef_declarator_list? SEMICOLON
+declaration(phantom, cxt):
+| declaration_specifiers(declaration(phantom, cxt)) init_declarator_list(cxt)? SEMICOLON
+| declaration_specifiers_typedef                    typedef_declarator_list?   SEMICOLON
 | static_assert_declaration
     {}
 
-init_declarator_list(anno_cxt):
-| init_declarator(anno_cxt)
-| init_declarator_list(anno_cxt) COMMA init_declarator(anno_cxt)
+init_declarator_list(cxt):
+| init_declarator(cxt)
+| init_declarator_list(cxt) COMMA init_declarator(cxt)
     {}
 
-init_declarator(anno_cxt):
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list(anno_cxt)
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list(anno_cxt) EQ c_initializer
+init_declarator(cxt):
+| declare_varname(declarator_noattrend) save_context attribute_specifier_list(cxt)
+| declare_varname(declarator_noattrend) save_context attribute_specifier_list(cxt) EQ c_initializer
     {}
 
 typedef_declarator_list:
@@ -454,20 +469,20 @@ storage_class_specifier_no_typedef:
 
 (* [declaration_specifier_no_type] matches declaration specifiers
    that do not contain either "typedef" nor type specifiers. *)
-%inline declaration_specifier_no_type(anno_cxt):
+%inline declaration_specifier_no_type(cxt):
 | storage_class_specifier_no_typedef
 | type_qualifier_noattr
 | function_specifier
-| attribute_specifier(anno_cxt)
+| attribute_specifier(cxt)
     {}
 
 (* [declaration_specifier_no_typedef_name] matches declaration
    specifiers that contain neither "typedef" nor a typedef name
    (i.e. type specifier declared using a previous "typedef
    keyword"). *)
-declaration_specifier_no_typedef_name(anno_cxt):
+declaration_specifier_no_typedef_name(cxt):
 | storage_class_specifier_no_typedef
-| type_qualifier(anno_cxt)
+| type_qualifier(cxt)
 | function_specifier
 | type_specifier_no_typedef_name
     {}
@@ -490,7 +505,7 @@ declaration_specifier_no_typedef_name(anno_cxt):
    this is the beginning of a declaration or a function definition, or
    [parameter_declaration], which means that this is the beginning of a
    parameter declaration. *)
-declaration_specifiers(phantom):
+declaration_specifiers(phantom, cxt):
 | ioption(rlist(declaration_specifier_no_type)) typedef_name                   declaration_specifier_no_type*
 | ioption(rlist(declaration_specifier_no_type)) type_specifier_no_typedef_name declaration_specifier_no_typedef_name*
     {}
@@ -545,14 +560,14 @@ struct_declaration:
 (* As in the standard, except it also encodes the constraint described
    in the comment above [declaration_specifiers]. *)
 (* The phantom parameter can be [struct_declaration] or [type_name]. *)
-specifier_qualifier_list(phantom, anno_cxt):
-| ioption(type_qualifier_list(anno_cxt)) typedef_name                   type_qualifier_list(anno_cxt)?
-| ioption(type_qualifier_list(anno_cxt)) type_specifier_no_typedef_name specifier_qualifier_no_typedef_name(anno_cxt)*
+specifier_qualifier_list(phantom, cxt):
+| ioption(type_qualifier_list(cxt)) typedef_name                   type_qualifier_list(cxt)?
+| ioption(type_qualifier_list(cxt)) type_specifier_no_typedef_name specifier_qualifier_no_typedef_name(cxt)*
     {}
 
-specifier_qualifier_no_typedef_name(anno_cxt):
+specifier_qualifier_no_typedef_name(cxt):
 | type_specifier_no_typedef_name
-| type_qualifier(anno_cxt)
+| type_qualifier(cxt)
     {}
 
 struct_declarator_list:
@@ -590,9 +605,9 @@ type_qualifier_noattr:
 | VOLATILE
     {}
 
-%inline type_qualifier(anno_cxt):
+%inline type_qualifier(cxt):
 | type_qualifier_noattr
-| attribute_specifier(anno_cxt)
+| attribute_specifier(cxt)
     {}
 
 lemmas_cxt:
@@ -613,21 +628,21 @@ stmtexpr_cxt:
 global_cxt:
   /* empty */ { Rc_pp_aux.Global_Cxt }
 
-rc_anno(anno_cxt):
-| a = RCANNO c = anno_cxt
+rc_anno(cxt):
+| a = RCANNO c = cxt
   {}
 
-attribute_specifier_list(anno_cxt):
+attribute_specifier_list(cxt):
 | /* empty */
-| attribute_specifier(anno_cxt) attribute_specifier_list(anno_cxt)
+| attribute_specifier(cxt) attribute_specifier_list(cxt)
     {}
 
-attribute_specifier(anno_cxt):
+attribute_specifier(cxt):
 | ATTRIBUTE LPAREN LPAREN gcc_attribute_list RPAREN RPAREN
 | PACKED LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN type_name RPAREN
-| rc_anno(anno_cxt)
+| rc_anno(cxt)
     {}
 
 gcc_attribute_list:
@@ -700,36 +715,36 @@ declarator_identifier:
    identifier being defined and a value containing the context stack
    that has to be restored if entering the body of the function being
    defined, if so. *)
-declarator(anno_cxt):
-| x = declarator_noattrend(anno_cxt) attribute_specifier_list(anno_cxt)
+declarator(cxt):
+| x = declarator_noattrend(cxt) attribute_specifier_list(cxt)
     { x }
 
-declarator_noattrend(anno_cxt):
-| x = direct_declarator(anno_cxt)
+declarator_noattrend(cxt):
+| x = direct_declarator(cxt)
     { x }
-| pointer x = direct_declarator(anno_cxt)
+| pointer x = direct_declarator(cxt)
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
 
-direct_declarator(anno_cxt):
+direct_declarator(cxt):
 | i = declarator_identifier
     { set_id_type i VarId; (i, Decl_ident) }
 | LPAREN save_context x = declarator RPAREN
     { x }
-| x = direct_declarator LBRACK type_qualifier_list(anno_cxt)? optional(assignment_expression, RBRACK)
+| x = direct_declarator LBRACK type_qualifier_list(cxt)? optional(assignment_expression, RBRACK)
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK STATIC type_qualifier_list(anno_cxt)? assignment_expression RBRACK
+| x = direct_declarator LBRACK STATIC type_qualifier_list(cxt)? assignment_expression RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list(anno_cxt) STATIC assignment_expression RBRACK
+| x = direct_declarator LBRACK type_qualifier_list(cxt) STATIC assignment_expression RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list(anno_cxt)? STAR RBRACK
+| x = direct_declarator LBRACK type_qualifier_list(cxt)? STAR RBRACK
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
@@ -756,16 +771,16 @@ direct_declarator(anno_cxt):
    When the C standard writes [pointer?], which represents a possibly empty
    list of [pointer1]'s, we write [pointer1*]. *)
 
-%inline pointer1(anno_cxt):
-  STAR type_qualifier_list(anno_cxt)?
+%inline pointer1(cxt):
+  STAR type_qualifier_list(cxt)?
     {}
 
-%inline pointer(anno_cxt):
-  pointer1(anno_cxt)* pointer1(anno_cxt)
+%inline pointer(cxt):
+  pointer1(cxt)* pointer1(cxt)
     {}
 
-type_qualifier_list(anno_cxt):
-| type_qualifier_list(anno_cxt)? type_qualifier(anno_cxt)
+type_qualifier_list(cxt):
+| type_qualifier_list(cxt)? type_qualifier(cxt)
     {}
 
 context_parameter_type_list:
@@ -784,29 +799,29 @@ parameter_list:
 
 parameter_declaration:
 | declaration_specifiers(parameter_declaration) declare_varname(declarator)
-| declaration_specifiers(parameter_declaration) abstract_declarator(parameter_declaration, anno_cxt)?
+| declaration_specifiers(parameter_declaration) abstract_declarator(parameter_declaration, cxt)?
     {}
 
 type_name:
-| specifier_qualifier_list(type_name, anno_cxt) abstract_declarator(type_name, anno_cxt)?
+| specifier_qualifier_list(type_name, cxt) abstract_declarator(type_name, cxt)?
     {}
 
 (* The phantom parameter can be [parameter_declaration] or [type_name].
    We take the latter to mean [type_or_name] or [direct_abstract_declarator].
    We need not distinguish these two cases: in both cases, a closing parenthesis
    is permitted (and we do not wish to keep track of why it is permitted). *)
-abstract_declarator(phantom, anno_cxt):
+abstract_declarator(phantom, cxt):
 | pointer
-| ioption(pointer) direct_abstract_declarator(anno_cxt)
+| ioption(pointer) direct_abstract_declarator(cxt)
     {}
 
-direct_abstract_declarator(anno_cxt):
-| LPAREN save_context abstract_declarator(type_name(anno_cxt)) RPAREN
-| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt)? optional(assignment_expression, RBRACK)
-| direct_abstract_declarator(anno_cxt)? LBRACK STATIC type_qualifier_list(anno_cxt)? assignment_expression RBRACK
-| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt) STATIC assignment_expression RBRACK
-| direct_abstract_declarator(anno_cxt)? LBRACK type_qualifier_list(anno_cxt)? STAR RBRACK
-| ioption(direct_abstract_declarator(anno_cxt)) LPAREN context_parameter_type_list? RPAREN
+direct_abstract_declarator(cxt):
+| LPAREN save_context abstract_declarator(type_name(cxt)) RPAREN
+| direct_abstract_declarator(cxt)? LBRACK type_qualifier_list(cxt)? optional(assignment_expression, RBRACK)
+| direct_abstract_declarator(cxt)? LBRACK STATIC type_qualifier_list(cxt)? assignment_expression RBRACK
+| direct_abstract_declarator(cxt)? LBRACK type_qualifier_list(cxt) STATIC assignment_expression RBRACK
+| direct_abstract_declarator(cxt)? LBRACK type_qualifier_list(cxt)? STAR RBRACK
+| ioption(direct_abstract_declarator(cxt)) LPAREN context_parameter_type_list? RPAREN
     {}
 
 c_initializer:
@@ -951,7 +966,7 @@ translation_item:
 
 %inline external_declaration:
 | function_definition
-| declaration(external_declaration)
+| declaration(external_declaration, global_cxt)
 | PRAGMA
     {}
 
@@ -962,7 +977,7 @@ identifier_list:
     { x::l }
 
 kr_param_declaration:
-| declaration_specifiers(declaration(block_item)) init_declarator_list(function_cxt)? SEMICOLON
+| declaration_specifiers(declaration(block_item, fun_arg_cxt), fun_arg_cxt) init_declarator_list(fun_arg_cxt)? SEMICOLON
     {}
 
 declaration_list:
@@ -971,11 +986,11 @@ declaration_list:
     {}
 
 function_definition1:
-| declaration_specifiers(declaration(external_declaration))
-    func = declare_varname(declarator_noattrend)
-    save_context attribute_specifier_list(function_cxt) ctx = save_context
-| declaration_specifiers(declaration(external_declaration))
-    func = declare_varname(declarator_noattrend)
+| declaration_specifiers(declaration(external_declaration, fun_cxt), fun_cxt)
+    func = declare_varname(declarator_noattrend(fun_arg_cxt))
+    save_context attribute_specifier_list(fun_cxt) ctx = save_context
+| declaration_specifiers(declaration(external_declaration, fun_cxt), fun_cxt)
+    func = declare_varname(declarator_noattrend(fun_arg_cxt))
     ctx = save_context declaration_list
     { begin match snd func with
       | Decl_fun ctx -> ctx (); declare_varname (fst func)
@@ -987,3 +1002,125 @@ function_definition1:
 function_definition:
 | ctx = function_definition1 compound_statement
     { ctx () }
+
+as_ident:
+| IDENT
+| TY_NAME_OR_IDENT
+  {}
+
+as_ty_name:
+| TY_NAME
+| TY_NAME_OR_IDENT
+  {}
+
+pattern:
+| LPAREN RPAREN 
+| as_ident 
+| LPAREN as_ident COMMA as_ident (COMMA as_ident)* RPAREN 
+  {}
+
+dot_ident:
+| DOTONE as_ident
+  {}
+
+rocq_term:
+| ROCQ_WELL_BR_OPEN rocq_term_contents ROCQ_WELL_BR_CLOS
+  {}
+
+rocq_term_contents:
+| (* nothing *)
+| QUOT
+| QUOT ANTI_OPEN full_type_expr ANTI_CLOS rocq_term_contents
+  {}
+
+iris_term:
+| IRIS_WELL_BR_OPEN iris_term_contents IRIS_WELL_BR_CLOS
+  {}
+
+iris_term_contents:
+| (* nothing *)
+| QUOT 
+| QUOT ANTI_OPEN full_type_expr ANTI_CLOS iris_term_contents
+  {}
+
+rocq_expr:
+| as_ident 
+| rocq_term
+  {}
+
+named_rocq_expr:
+| as_ident COLON rocq_expr
+  {}
+
+named_rocq_expr_parens:
+| LPAREN named_rocq_expr RPAREN
+  {}
+
+named_full_type_expr:
+| as_ident COLON full_type_expr
+  {}
+
+ptr_kind:
+| OWN
+| SHARE
+| FRAC rocq_expr
+  {}
+
+constr: 
+| iris_term
+| EXISTS as_ident optional(COLON rocq_expr, DOTONE constr)
+| rocq_expr
+| GLOBAL as_ident COLON full_type_expr
+| ptr_kind as_ident COLON full_type_expr
+| as_ident COLON full_type_expr
+  {}
+
+atomic_type_expr:
+| rocq_expr option(AT atomic_type_expr)
+| as_ty_name LANGLE type_args RANGLE
+| DOTTHREE
+| LPAREN full_type_expr RPAREN 
+  {}
+
+cstring_type_expr:
+| cstring_type_expr AMPERSAND constr
+| atomic_type_expr
+  {}
+
+full_type_expr:
+| EXISTS pattern optional(COLON rocq_expr, DOTONE full_type_expr)
+| cstring_type_expr
+  {}
+
+type_expr_arg:
+| full_type_expr
+| LAMBDA pattern optional(COLON rocq_expr, DOTONE type_expr_arg)
+  {}
+
+type_args_tail:
+|
+| COMMA type_expr_arg type_args_tail
+  {}
+
+type_args:
+|
+| type_expr_arg type_args_tail
+  {}
+
+let_anno:
+| as_ident optional(COLON rocq_expr, EQUAL rocq_expr)
+  {}
+
+annot_args_anno:
+| INTEGER COLON INTEGER rocq_expr
+  {}
+
+union_tag_anno: 
+| as_ident named_rocq_expr_parens*
+  {}
+
+manual_proof_anno:
+| as_ident dot_ident* COLON as_ident COMMA as_ident
+  {}
+
+
