@@ -25,28 +25,12 @@
 
 %{
   open Pre_parser_aux
-
-  let set_id_type (_,r,_) t =
-    r := t
-
-  let declare_varname (i,_,_) =
-    !declare_varname i
-
-  let declare_typename (i,_,_) =
-    !declare_typename i
-
-  type 'id fun_declarator_ctx =
-  | Decl_ident
-  | Decl_other
-  | Decl_fun of (unit -> unit)
-  | Decl_krfun of 'id
-  
-  module Rc_pp_aux = Rc_pre_parser_aux
-
+  module Pre_aux = Pre_parser_aux
+  module IdCxt = Pre_aux.IdContext
 %}
 
 %token<string> PRE_NAME
-%token<string * Pre_parser_aux.identifier_type ref * Cabs.loc>
+%token<string * IdCxt.identifier_type ref * Cabs.loc>
   VAR_NAME TYPEDEF_NAME
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
