@@ -373,7 +373,7 @@ let compute_buffer tokens transf = fun () ->
   let loop t = Buf_cons (t, Lazy.from_fun go) in
   loop (transf (Queue.pop tokens)) 
 
-let annot : Rc_pp_aux.decl -> Rc_pp_aux.arguments : buffer = 
+let annot : Pre_aux.decl -> Pre_aux.arguments : buffer = 
   fun decl args -> begin 
     let tokens = Queue.create () in
     let buffer = ref ErrorReports.Zero in
@@ -381,25 +381,25 @@ let annot : Rc_pp_aux.decl -> Rc_pp_aux.arguments : buffer =
     let args = 
       match args with 
       | Zero -> begin
-        Queue.push (Rc_pre_parser.ZERO_ARG_DECL decl) tokens;
+        Queue.push (Pre.ZERO_ARG_DECL decl) tokens;
         [] end
       | One a -> begin
-        Queue.push (Rc_pre_parser.ONE_ARG_DECL decl) tokens;
+        Queue.push (Pre.ONE_ARG_DECL decl) tokens;
         [a] end
       | Many aa -> begin
-        Queue.push (Rc_pre_parser.MANY_ARG_DECL decl) tokens;
+        Queue.push (Pre.MANY_ARG_DECL decl) tokens;
         aa end 
     in 
     let rec push_all = function 
     | (loc, s) :: nil  -> begin
       invoke_rc_pre_parser loc s decl tokens buffer;
-      Queue.push Rc_pre_parser.ARG_END tokens end
+      Queue.push Pre.ARG_END tokens end
     | (loc, s) :: rest -> begin
       invoke_rc_pre_parser loc s decl tokens buffer;
-      Queue.push Rc_pre_parser.ARG_SEP tokens;
+      Queue.push Pre.ARG_SEP tokens;
       push_all rest end
     | nil ->
-      Queue.push Rc_pre_parser.ARG_END tokens
+      Queue.push Pre.ARG_END tokens
     in 
     push_all args;
     Lazy.from_fun compute_buffer
@@ -830,25 +830,25 @@ and initial_linebegin = parse
 
 and rc_decl = parse 
   | pat_rc_decl_zero_arg          { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in
+                                      let to_decl = Pre_aux.decl_of_string decl in
                                       to_decl (loc_of_lb lexbuf) 
                                     in
-                                    let args = Rc_pp_aux.Zero in 
+                                    let args = Pre_aux.Zero in 
                                     rc_clos_end decl args lexbuf }
   | pat_rc_decl_one_arg "(\""
                                   { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in
+                                      let to_decl = Pre_aux.decl_of_string decl in
                                       to_decl (loc_of_lb lexbuf) 
                                     in
                                     let args = 
                                       let buf = Buffer.default_sized () in
                                       let start_p = lexbuf.lex_curr_p in 
-                                      Rc_pp_aux.One (rc_literal start_p buf lexbuf)
+                                      Pre_aux.One (rc_literal start_p buf lexbuf)
                                     in 
                                     rc_open_end decl args lexbuf }
   | pat_rc_decl_many_arg "(\""
                                   { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in 
+                                      let to_decl = Pre_aux.decl_of_string decl in 
                                       to_decl (loc_of_lb lexbuf) 
                                     in
                                     let args =
@@ -863,7 +863,7 @@ and rc_rest args = parse
                                   { let buf = Bytes.default_sized () in
                                     let start_p = lexbuf.lex_curr_p in  
                                     rc_rest ((rc_literal start_p buf lexbuf) :: args) lexbuf }
-  | ""                            { Rc_pp_aux.Many (List.rev args) }
+  | ""                            { Pre_aux.Many (List.rev args) }
 
 and rc_open_end decl args = parse 
   | ")"                           { rc_clos_end decl args lexbuf }
