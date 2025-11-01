@@ -19,6 +19,7 @@
 open Lexing
 open Pre_parser
 open Pre_parser_aux
+open Location
 
 module SSet = Set.Make(String)
 
@@ -26,7 +27,7 @@ let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
 let ignored_keywords : SSet.t ref = ref SSet.empty
 
 let reserved_keyword loc id =
-  Diagnostics.fatal_error (loc.Cabs.filename, loc.Cabs.lineno)
+  Diagnostics.fatal_error (loc.filename, loc.lineno)
     "illegal use of reserved keyword `%s'" id
 
 let () =
@@ -556,7 +557,7 @@ and singleline_comment = parse
 and rc_annot_args = parse
   | ")]]"  { [] }
   | "\"" ([^ '"']* as a) "\")]]" { [a] }
-  | "\"" ([^ '"']* as a) "\"," { a ++ rc_annot_args lexbuf }
+  | "\"" ([^ '"']* as a) "\"," { a :: rc_annot_args lexbuf }
 
 {
   open Parser.MenhirLibParser.Inter
@@ -695,9 +696,10 @@ and rc_annot_args = parse
           (* combine consecutive annots *)
           let rec doAnnots str =
             match Queue.peek tokens with
-            | Pre_parser.RC_ANNOT (a, b, loc) -> ignore (Queue.pop tokens); doAnnots (str ++ [(a, b)])
+            | Pre_parser.RC_ANNOT (a, b, loc) -> ignore (Queue.pop tokens); doAnnots (str @ [(a, b)])
+            | _ -> str
           in
-          let annot = rc_annot.function_annot (doAnnots [(a, b)]) in loop (Parser.FUNCTION_ANNOT annot)
+          let annot = Rc_annot.function_annot (doAnnots [(a, b)]) in loop (Parser.FUNCTION_ANNOT annot)
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
