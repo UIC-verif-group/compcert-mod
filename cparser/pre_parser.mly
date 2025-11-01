@@ -955,13 +955,13 @@ function_definition1:
       ctx }
 
 rc_attributes:
-| a = RC_ANNOT
-    { (snd (snd a), [a]) }
-| a = RC_ANNOT l = rc_attributes
-    { (snd (snd a), a::l) }
+| RC_ANNOT
+    { }
+| RC_ANNOT rc_attributes
+    { }
 
 function_definition:
 | ctx = function_definition1 compound_statement
     { ctx () }
-| attrs = rc_attributes ctx = function_definition1 compound_statement
-    { !set_annot (fst attrs) (rc_annot.function_annot attrs); ctx ()}
+| rc_attributes ctx = function_definition1 compound_statement
+    { ctx () }

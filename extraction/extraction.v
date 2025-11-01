@@ -136,6 +136,7 @@ Extract Constant Cabs.loc =>
  }".
 Extract Inlined Constant Cabs.string => "String.t".
 Extract Constant Cabs.char_code => "int64".
+Extract Constant Cabs.function_annot => "Rc_annot.function_annot".
 
 (* Processor-specific extraction directives *)
 

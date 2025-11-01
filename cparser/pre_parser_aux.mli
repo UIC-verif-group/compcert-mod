@@ -27,5 +27,3 @@ val save_context : (unit -> (unit -> unit)) ref
    typename *)
 val declare_varname : (string -> unit) ref
 val declare_typename : (string -> unit) ref
-
-val set_annot : (loc -> function_annot -> unit) ref

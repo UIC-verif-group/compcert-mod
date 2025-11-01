@@ -47,7 +47,7 @@ DIRS=extraction \
   lib common $(ARCH) backend cfrontend cparser driver \
   export debug
 
-INCLUDES=$(patsubst %,-I %, $(DIRS))
+INCLUDES=$(patsubst %,-I %, $(DIRS)) -I ~/.opam/4.14.2/lib/earley/core
 
 # Control of warnings:
 
@@ -92,7 +92,7 @@ LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS)
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte rcvstgen rcvstgen.byte
-GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml
+GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml cparser/rc_annot.ml
 
 # Beginning of part that assumes .depend.extr already exists
 
@@ -129,6 +129,9 @@ endif
 clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
+
+cparser/rc_annot.ml:
+	pa_ocaml refinedc/rc_annot.ml > $@
 
 RCVSTGEN_OBJS:=$(shell $(MODORDER) export/ExportRcVst.cmx)
 

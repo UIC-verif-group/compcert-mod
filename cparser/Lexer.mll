@@ -21,7 +21,6 @@ open Pre_parser
 open Pre_parser_aux
 
 module SSet = Set.Make(String)
-module LMap = Map.Make(Cabs.loc)
 
 let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
 let ignored_keywords : SSet.t ref = ref SSet.empty
@@ -117,13 +116,6 @@ let _ =
 
   declare_typename := begin fun id ->
     types_context := SSet.add id !types_context
-  end
-
-let rc_ctx : LMap.t ref = ref LMap.empty
-
-let _ =
-  set_annot := begin fun loc annot ->
-    rc_ctx := LMap.add loc annot !rc_ctx
   end
 
 let init filename channel : Lexing.lexbuf =
@@ -699,13 +691,13 @@ and rc_annot_args = parse
       | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
       | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
       | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
-      | Pre_parser.RC_ANNOT (_, _, loc) ->
-          (* combine successive annots *)
-          let rec doAnnots () =
+      | Pre_parser.RC_ANNOT (a, b, loc) ->
+          (* combine consecutive annots *)
+          let rec doAnnots str =
             match Queue.peek tokens with
-            | Pre_parser.RC_ANNOT _ -> ignore (Queue.pop tokens); doAnnots ()
+            | Pre_parser.RC_ANNOT (a, b, loc) -> ignore (Queue.pop tokens); doAnnots (str ++ [(a, b)])
           in
-          doAnnots(); loop (Parser.FUNCTION_ANNOT (LMap.find loc !rc_ctx))
+          let annot = rc_annot.function_annot (doAnnots [(a, b)]) in loop (Parser.FUNCTION_ANNOT annot)
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
