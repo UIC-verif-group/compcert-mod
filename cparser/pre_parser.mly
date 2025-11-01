@@ -49,7 +49,7 @@
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
 %token<string * Cabs.loc> PRAGMA
-%token<string * string list * Cabs.loc> RC_ANNOT
+%token<Rc_annot.rc_attr> RC_ANNOT
 
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION

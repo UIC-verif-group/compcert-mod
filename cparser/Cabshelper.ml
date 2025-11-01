@@ -14,7 +14,7 @@
 (*                                                                     *)
 (* *********************************************************************)
 
-
+open Location
 open Cabs
 
 (*********** HELPER FUNCTIONS **********)
@@ -42,7 +42,7 @@ let rec isTypedef = function
 
 let get_definitionloc (d : definition) : loc =
   match d with
-  | FUNDEF(_, _, _, _, l) -> l
+  | FUNDEF(_, _, _, _, _, l) -> l
   | DECDEF(_, l) -> l
   | PRAGMA(_, l) -> l
   | STATIC_ASSERT(_, _, _, _, l) -> l

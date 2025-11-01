@@ -19,6 +19,7 @@
 (* Numbered references are to sections of the ISO C99 standard *)
 
 open Machine
+open Location
 open Cabs
 open C
 open Diagnostics
@@ -2990,7 +2991,7 @@ let elab_definition (for_loop: bool) (local: bool) (nonstatic_inline: bool)
   match def with
   (* "int f(int x) { ... }" *)
   (* "int f(x, y) double y; { ... }" *)
-  | FUNDEF(spec, name, defs, body, loc) ->
+  | FUNDEF(spec, name, _, defs, body, loc) ->
       (* This should actually never be triggered, catched by pre-parser *)
       if local then error loc "function definition is not allowed here";
       let env1 = elab_fundef env spec name defs body loc in

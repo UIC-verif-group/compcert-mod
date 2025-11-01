@@ -132,7 +132,7 @@ let currentLoc =
   in
   fun lb ->
     let p = Lexing.lexeme_start_p lb in
-    Cabs.({ lineno   = p.Lexing.pos_lnum;
+    ({ lineno   = p.Lexing.pos_lnum;
             filename = p.Lexing.pos_fname;
             byteno   = p.Lexing.pos_cnum;
             ident    = getident ();})
@@ -194,7 +194,7 @@ let combine_encodings loc e1 e2 =
   else if e2 = Cabs.EncNone then e1
   else if e1 = e2 then e1
   else Diagnostics.fatal_error
-           Cabs.(loc.filename, loc.lineno)
+           (loc.filename, loc.lineno)
            "unsupported non-standard concatenation of string literals"
 
 (* Handling of characters and escapes in string and char constants *)
@@ -388,7 +388,8 @@ rule initial = parse
                                     STRING_LITERAL(enc, l, currentLoc lexbuf) }
   | "[[rc::" ([^ '(' ']' '\n']* as n) '('
                                   { let a = rc_annot_args lexbuf in
-                                    RC_ANNOT (n, a, currentLoc lexbuf) }
+                                    RC_ANNOT {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
+                                              Rc_annot.rc_attr_args = a } }
   | "..."                         { ELLIPSIS(currentLoc lexbuf) }
   | "+="                          { ADD_ASSIGN(currentLoc lexbuf) }
   | "-="                          { SUB_ASSIGN(currentLoc lexbuf) }
@@ -556,8 +557,10 @@ and singleline_comment = parse
 
 and rc_annot_args = parse
   | ")]]"  { [] }
-  | "\"" ([^ '"']* as a) "\")]]" { [a] }
-  | "\"" ([^ '"']* as a) "\"," { a :: rc_annot_args lexbuf }
+  | "\"" ([^ '"']* as a) "\")]]" { [{ Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
+                                      Rc_annot.rc_attr_arg_pieces = [] }] }
+  | "\"" ([^ '"']* as a) "\","   { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
+                                     Rc_annot.rc_attr_arg_pieces = [] } :: rc_annot_args lexbuf }
 
 {
   open Parser.MenhirLibParser.Inter
@@ -692,14 +695,14 @@ and rc_annot_args = parse
       | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
       | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
       | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
-      | Pre_parser.RC_ANNOT (a, b, loc) ->
+      | Pre_parser.RC_ANNOT a ->
           (* combine consecutive annots *)
           let rec doAnnots str =
             match Queue.peek tokens with
-            | Pre_parser.RC_ANNOT (a, b, loc) -> ignore (Queue.pop tokens); doAnnots (str @ [(a, b)])
+            | Pre_parser.RC_ANNOT a -> ignore (Queue.pop tokens); doAnnots (str @ [a])
             | _ -> str
           in
-          let annot = Rc_annot.function_annot (doAnnots [(a, b)]) in loop (Parser.FUNCTION_ANNOT annot)
+          let annot = Rc_annot.function_annot (doAnnots [a]) in loop (Parser.FUNCTION_ANNOT annot)
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
