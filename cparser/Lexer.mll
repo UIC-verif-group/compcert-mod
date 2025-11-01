@@ -20,9 +20,8 @@ open Lexing
 open Pre_parser
 open Pre_parser_aux
 
-module Rc_pp_aux = Rc_pre_parser_aux
-
 module SSet = Set.Make(String)
+module LMap = Map.Make(Cabs.loc)
 
 let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
 let ignored_keywords : SSet.t ref = ref SSet.empty
@@ -120,28 +119,30 @@ let _ =
     types_context := SSet.add id !types_context
   end
 
+let rc_ctx : LMap.t ref = ref LMap.empty
+
+let _ =
+  set_annot := begin fun loc annot ->
+    rc_ctx := LMap.add loc annot !rc_ctx
+  end
+
 let init filename channel : Lexing.lexbuf =
   let lb = Lexing.from_channel channel in
   lb.lex_curr_p <- {lb.lex_curr_p with pos_fname = filename; pos_lnum = 1};
   lb
 
-let (loc_of_lb, loc_of_start_p) = 
-  let nextident = ref 0 in 
-  let getident () = 
-    next_ident := !next_ident + 1;
+let currentLoc =
+  let nextident = ref 0 in
+  let getident () =
+    nextident := !nextident + 1;
     !nextident
-  in 
-  let of_start_p p = 
+  in
+  fun lb ->
+    let p = Lexing.lexeme_start_p lb in
     Cabs.({ lineno   = p.Lexing.pos_lnum;
             filename = p.Lexing.pos_fname;
             byteno   = p.Lexing.pos_cnum;
-            ident    = getident () })
-  in 
-  let of_lb lb = 
-    let p = Lexing.lexeme_start_p lb in 
-    of_start_p p 
-  in
-  (of_lb, of_start_p)
+            ident    = getident ();})
 
 (* Error reporting *)
 
@@ -156,6 +157,21 @@ let error lb fmt =
 let warning lb kind fmt =
   Diagnostics.warning
       (lb.lex_curr_p.pos_fname,lb.lex_curr_p.pos_lnum) kind fmt
+
+(* Identifiers or keywords *)
+
+let ident_or_keyword lb id =
+  try
+    let f = Hashtbl.find lexicon id in
+    f (currentLoc lb)
+  with Not_found ->
+    if String.contains id '$' then begin
+      if id = "$" then
+        error lb "not supported: identifier consisting of a single '$' sign"
+      else
+        warning lb Diagnostics.Dollar_in_identifier "'$' in identifier";
+    end;
+    PRE_NAME id
 
 (* Simple character escapes *)
 
@@ -192,15 +208,13 @@ let combine_encodings loc e1 e2 =
 
 type chr = Chr of int | Esc of int64
 
-let utf8_check lexbuf min x = 
-  if x > 0x10FFFF || (x >= 0xD800 && x <= 0xDFFF) then 
+let check_utf8 lexbuf min x =
+  if x > 0x10FFFF || (x >= 0xD800 && x <= 0xDFFF) then
     warning lexbuf Diagnostics.Invalid_UTF8 "Wrong Unicode value U+%X" x;
-  if x < min then 
+  if x < min then
     warning lexbuf Diagnostics.Invalid_UTF8
-            "Overlong UTF-8 encoding for Unicode value U+%X" x
-
-let check_utf8 lexbuf min x = begin 
-  utf8_check lexbuf min x; Chr x end
+            "Overlong UTF-8 encoding for Unicode value U+%X" x;
+  Chr x
 
 let check_universal_character lexbuf x =
   if x > 0x10FFFF
@@ -254,22 +268,6 @@ let add_char enc c accu =
       if Cutil.sizeof_ikind (Cutil.wchar_ikind ()) = 2
       then add_char_utf16 x accu
       else Int64.of_int x :: accu
-
-module Buffer = struct 
-  include Buffer 
-
-  let add_chars cs buf = 
-    let rec go = begin function 
-    | c :: tl ->
-      add_char c buf
-    | nil     ->
-      ()
-    end
-
-  let default_sized () = 
-    Buffer.create 100
-end
-
 }
 
 (* Identifiers *)
@@ -289,41 +287,6 @@ let identifier_nondigit =
   | '$'
 
 let identifier = identifier_nondigit (identifier_nondigit|digit)*
-
-let pat_rc_decl_many_arg =
-  ( "parameters"
-  | "refined_by"
-  | "exists"
-  | "let"
-  | "constraints"
-  | "args"
-  | "requires"
-  | "ensures"
-  | "inv_vars"
-  | "annot_args"
-  | "tactics"
-  | "lemmas" ) as decl
-
-let pat_rc_decl_one_arg =
-  ( "typedef"
-  | "size"
-  | "tagged_union"
-  | "union_tag"
-  | "field"
-  | "global"
-  | "returns"
-  | "manual_proof"
-  | "annot"
-  | "unfold_order" ) as decl
-
-let pat_rc_decl_zero_arg =
-  ( "immovable"
-  | "asrt"
-  | "trust_me"
-  | "skip"
-  | "block"
-  | "full_block"
-  | "inlined" ) as decl
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
@@ -396,13 +359,11 @@ let octal_escape_sequence =
 let hexadecimal_escape_sequence = "\\x" (hexadecimal_digit+ as n)
 
 rule initial = parse
-  | "[[rc::"                      { let loc = loc_of_lb lexbuf in 
-                                    RCATTR (rc_decl lexbuf, loc) }
   | '\n'                          { new_line lexbuf; initial_linebegin lexbuf }
   | whitespace_char_no_newline +  { initial lexbuf }
   | "/*"                          { multiline_comment lexbuf; initial lexbuf }
-  | "//"                          { singleline_comment lexbuf; initial lexbuf }
-  | integer_constant as s         { CONSTANT (Cabs.CONST_INT s, loc_of_lb lexbuf) }
+  | "//"                          { singleline_comment lexbuf; initial_linebegin lexbuf }
+  | integer_constant as s         { CONSTANT (Cabs.CONST_INT s, currentLoc lexbuf) }
   | decimal_floating_constant     { CONSTANT (Cabs.CONST_FLOAT
                                       {Cabs.isHex_FI = false;
                                        Cabs.integer_FI = intpart;
@@ -412,7 +373,7 @@ rule initial = parse
                                          match suffix with
                                          | None -> None
                                          | Some c -> Some (String.make 1 c) },
-                                      loc_of_lb lexbuf) }
+                                      currentLoc lexbuf) }
   | hexadecimal_floating_constant { CONSTANT (Cabs.CONST_FLOAT
                                       {Cabs.isHex_FI = true;
                                        Cabs.integer_FI = intpart;
@@ -422,68 +383,68 @@ rule initial = parse
                                          match suffix with
                                            | None -> None
                                            | Some c -> Some (String.make 1 c) },
-                                      loc_of_lb lexbuf)}
+                                      currentLoc lexbuf)}
   | preprocessing_number as s     { error lexbuf "invalid numerical constant '%s'@ These characters form a preprocessor number, but not a constant" s;
-                                    CONSTANT (Cabs.CONST_INT "0", loc_of_lb lexbuf) }
+                                    CONSTANT (Cabs.CONST_INT "0", currentLoc lexbuf) }
   | (""|"L"|"u"|"U") as e "'"     { let enc = encoding_of e in
-                                    let start_p = lexbuf.lex_start_p in 
-                                    char_literal start_p [] lexbuf }
+                                    let l = char_literal lexbuf.lex_start_p [] lexbuf in
+                                    CONSTANT (Cabs.CONST_CHAR(enc, l), currentLoc lexbuf) }
   | (""|"L"|"u"|"U"|"u8") as e "\""
                                   { let enc = encoding_of e in
-                                    let start_p = lexbuf.lex_start_p in  
-                                    string_literal start_p enc [] lexbuf }
-  | "..."                         { ELLIPSIS(loc_of_lb lexbuf) }
-  | "+="                          { ADD_ASSIGN(loc_of_lb lexbuf) }
-  | "-="                          { SUB_ASSIGN(loc_of_lb lexbuf) }
-  | "*="                          { MUL_ASSIGN(loc_of_lb lexbuf) }
-  | "/="                          { DIV_ASSIGN(loc_of_lb lexbuf) }
-  | "%="                          { MOD_ASSIGN(loc_of_lb lexbuf) }
-  | "|="                          { OR_ASSIGN(loc_of_lb lexbuf) }
-  | "&="                          { AND_ASSIGN(loc_of_lb lexbuf) }
-  | "^="                          { XOR_ASSIGN(loc_of_lb lexbuf) }
-  | "<<="                         { LEFT_ASSIGN(loc_of_lb lexbuf) }
-  | ">>="                         { RIGHT_ASSIGN(loc_of_lb lexbuf) }
-  | "<<"                          { LEFT(loc_of_lb lexbuf) }
-  | ">>"                          { RIGHT(loc_of_lb lexbuf) }
-  | "=="                          { EQEQ(loc_of_lb lexbuf) }
-  | "!="                          { NEQ(loc_of_lb lexbuf) }
-  | "<="                          { LEQ(loc_of_lb lexbuf) }
-  | ">="                          { GEQ(loc_of_lb lexbuf) }
-  | "="                           { EQ(loc_of_lb lexbuf) }
-  | "<"                           { LT(loc_of_lb lexbuf) }
-  | ">"                           { GT(loc_of_lb lexbuf) }
-  | "++"                          { INC(loc_of_lb lexbuf) }
-  | "--"                          { DEC(loc_of_lb lexbuf) }
-  | "->"                          { PTR(loc_of_lb lexbuf) }
-  | "+"                           { PLUS(loc_of_lb lexbuf) }
-  | "-"                           { MINUS(loc_of_lb lexbuf) }
-  | "*"                           { STAR(loc_of_lb lexbuf) }
-  | "/"                           { SLASH(loc_of_lb lexbuf) }
-  | "%"                           { PERCENT(loc_of_lb lexbuf) }
-  | "!"                           { BANG(loc_of_lb lexbuf) }
-  | "&&"                          { ANDAND(loc_of_lb lexbuf) }
-  | "||"                          { BARBAR(loc_of_lb lexbuf) }
-  | "&"                           { AND(loc_of_lb lexbuf) }
-  | "|"                           { BAR(loc_of_lb lexbuf) }
-  | "^"                           { HAT(loc_of_lb lexbuf) }
-  | "?"                           { QUESTION(loc_of_lb lexbuf) }
-  | ":"                           { COLON(loc_of_lb lexbuf) }
-  | "~"                           { TILDE(loc_of_lb lexbuf) }
-  | "{"|"<%"                      { LBRACE(loc_of_lb lexbuf) }
-  | "}"|"%>"                      { RBRACE(loc_of_lb lexbuf) }
-  | "["|"<:"                      { LBRACK(loc_of_lb lexbuf) }
-  | "]"|":>"                      { RBRACK(loc_of_lb lexbuf) }
-  | "("                           { LPAREN(loc_of_lb lexbuf) }
-  | ")"                           { RPAREN(loc_of_lb lexbuf) }
-  | ";"                           { SEMICOLON(loc_of_lb lexbuf) }
-  | ","                           { COMMA(loc_of_lb lexbuf) }
-  | "."                           { DOT(loc_of_lb lexbuf) }
-  | identifier as id              {
-    if SSet.mem id !ignored_keywords then
-      initial lexbuf
-    else
-      try Hashtbl.find lexicon id (loc_of_lb lexbuf)
-      with Not_found -> PRE_NAME id }
+                                    let l = string_literal lexbuf.lex_start_p enc [] lexbuf in
+                                    STRING_LITERAL(enc, l, currentLoc lexbuf) }
+  | "[[rc::" ([^ '(' ']' '\n']* as n) '('
+                                  { let a = rc_annot_args lexbuf in
+                                    RC_ANNOT (n, a, currentLoc lexbuf) }
+  | "..."                         { ELLIPSIS(currentLoc lexbuf) }
+  | "+="                          { ADD_ASSIGN(currentLoc lexbuf) }
+  | "-="                          { SUB_ASSIGN(currentLoc lexbuf) }
+  | "*="                          { MUL_ASSIGN(currentLoc lexbuf) }
+  | "/="                          { DIV_ASSIGN(currentLoc lexbuf) }
+  | "%="                          { MOD_ASSIGN(currentLoc lexbuf) }
+  | "|="                          { OR_ASSIGN(currentLoc lexbuf) }
+  | "&="                          { AND_ASSIGN(currentLoc lexbuf) }
+  | "^="                          { XOR_ASSIGN(currentLoc lexbuf) }
+  | "<<="                         { LEFT_ASSIGN(currentLoc lexbuf) }
+  | ">>="                         { RIGHT_ASSIGN(currentLoc lexbuf) }
+  | "<<"                          { LEFT(currentLoc lexbuf) }
+  | ">>"                          { RIGHT(currentLoc lexbuf) }
+  | "=="                          { EQEQ(currentLoc lexbuf) }
+  | "!="                          { NEQ(currentLoc lexbuf) }
+  | "<="                          { LEQ(currentLoc lexbuf) }
+  | ">="                          { GEQ(currentLoc lexbuf) }
+  | "="                           { EQ(currentLoc lexbuf) }
+  | "<"                           { LT(currentLoc lexbuf) }
+  | ">"                           { GT(currentLoc lexbuf) }
+  | "++"                          { INC(currentLoc lexbuf) }
+  | "--"                          { DEC(currentLoc lexbuf) }
+  | "->"                          { PTR(currentLoc lexbuf) }
+  | "+"                           { PLUS(currentLoc lexbuf) }
+  | "-"                           { MINUS(currentLoc lexbuf) }
+  | "*"                           { STAR(currentLoc lexbuf) }
+  | "/"                           { SLASH(currentLoc lexbuf) }
+  | "%"                           { PERCENT(currentLoc lexbuf) }
+  | "!"                           { BANG(currentLoc lexbuf) }
+  | "&&"                          { ANDAND(currentLoc lexbuf) }
+  | "||"                          { BARBAR(currentLoc lexbuf) }
+  | "&"                           { AND(currentLoc lexbuf) }
+  | "|"                           { BAR(currentLoc lexbuf) }
+  | "^"                           { HAT(currentLoc lexbuf) }
+  | "?"                           { QUESTION(currentLoc lexbuf) }
+  | ":"                           { COLON(currentLoc lexbuf) }
+  | "~"                           { TILDE(currentLoc lexbuf) }
+  | "{"|"<%"                      { LBRACE(currentLoc lexbuf) }
+  | "}"|"%>"                      { RBRACE(currentLoc lexbuf) }
+  | "["|"<:"                      { LBRACK(currentLoc lexbuf) }
+  | "]"|":>"                      { RBRACK(currentLoc lexbuf) }
+  | "("                           { LPAREN(currentLoc lexbuf) }
+  | ")"                           { RPAREN(currentLoc lexbuf) }
+  | ";"                           { SEMICOLON(currentLoc lexbuf) }
+  | ","                           { COMMA(currentLoc lexbuf) }
+  | "."                           { DOT(currentLoc lexbuf) }
+  | identifier as id              { if SSet.mem id !ignored_keywords
+                                    then initial lexbuf
+                                    else ident_or_keyword lexbuf id }
   | eof                           { EOF }
   | _ as c                        { fatal_error lexbuf "invalid symbol %C" c }
 
@@ -492,47 +453,6 @@ and initial_linebegin = parse
   | whitespace_char_no_newline    { initial_linebegin lexbuf }
   | '#'                           { hash lexbuf }
   | ""                            { initial lexbuf }
-
-and rc_decl = parse 
-  | pat_rc_decl_zero_arg          { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in
-                                      to_decl (loc_of_lb lexbuf) 
-                                    in
-                                    let args = Rc_pp_aux.Zero in 
-                                    rc_clos_end decl args lexbuf }
-  | pat_rc_decl_one_arg "(\""
-                                  { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in
-                                      to_decl (loc_of_lb lexbuf) 
-                                    in
-                                    let args = 
-                                      let buf = Buffer.default_sized () in
-                                      let start_p = lexbuf.lex_curr_p in 
-                                      Rc_pp_aux.One (rc_literal start_p buf lexbuf)
-                                    in 
-                                    rc_open_end decl args lexbuf }
-  | pat_rc_decl_many_arg "(\""
-                                  { let decl = 
-                                      let to_decl = Rc_pp_aux.decl_of_string decl in 
-                                      to_decl (loc_of_lb lexbuf) 
-                                    in
-                                    let args =
-                                      let buf = Buffer.default_sized () in 
-                                      let start_p = lexbuf.lex_curr_p in 
-                                      rc_rest [rc_literal start_p buf lexbuf] lexbuf 
-                                    in 
-                                    rc_open_end decl args lexbuf }
-and rc_rest args = parse
-  | "," whitespace_char_no_newline * "\""  
-                                  { let buf = Bytes.default_sized () in
-                                    let start_p = lexbuf.lex_curr_p in  
-                                    rc_rest ((rc_literal start_p buf lexbuf) :: args) lexbuf }
-  | ""                            { Rc_pp_aux.Many (List.rev args) }
-
-and rc_open_end decl args = parse 
-  | ")"                           { rc_clos_end decl args lexbuf }
-and rc_clos_end decl args = parse
-  | "]]"                          { RcLexer.annot decl args }
 
 and char = parse
   | universal_character_name
@@ -582,47 +502,17 @@ and char = parse
        Esc (Int64.of_int (Char.code c)) (* re-encode as-is *)
      }
 
-and rc_char buf = parse
-  | ['\x00'-'\x7F'] as c1
-      { Buffer.add_chars [c1] buf }
-  | (['\xC0'-'\xDF'] as c1) (['\x80'-'\xBF'] as c2)
-      { let i = (Char.code c1 land 0b00011111) lsl 6 + 
-                (Char.code c2 land 0b00111111) in 
-        utf8_check lexbuf 0x80 i;
-        Buffer.add_chars [c1; c2] buf }
-  | (['\xE0'-'\xEF'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3)
-      { let i = (Char.code c1 land 0b00001111) lsl 12 +
-                (Char.code c2 land 0b00111111) lsl 6 + 
-                (Char.code c3 land 0b00111111) in 
-        utf8_check lexbuf 0x800 i;
-        Buffer.add_chars [c1; c2; c3] buf }
-  | (['\xF0'-'\xF7'] as c1) (['\x80'-'\xBF'] as c2) (['\x80'-'\xBF'] as c3) (['\x80'-'\xBF'] as c4)
-      { let i = (Char.code c1 land 0b00000111) lsl 18 + 
-                (Char.code c2 land 0b00111111) lsl 12 + 
-                (Char.code c3 land 0b00111111) lsl 6 + 
-                (Char.code c4 land 0b00111111) in
-        utf8_check lexbuf 0x800 i;
-        Buffer.add_chars [c1; c2; c3; c4] buf }
-  | _ as c
-     { fatal_error lexbuf Diagnostics.Invalid_UTF8
-          "Invalid UTF8 encoding: byte 0x%02x" (Char.code c) }
-
-and char_literal start_p accu = parse
-  | '\''       { let chars = List.rev accu in 
-                 CONSTANT (Cabs.CONST_CHAR(enc, chars), loc_of_start_p start_p) }
+and char_literal startp accu = parse
+  | '\''       { lexbuf.lex_start_p <- startp;
+                 List.rev accu }
   | '\n' | eof { fatal_error lexbuf "missing terminating \"'\" character" }
-  | ""         { let c = char lexbuf in char_literal start_p (add_char Cabs.EncU32 c accu) lexbuf }
+  | ""         { let c = char lexbuf in char_literal startp (add_char Cabs.EncU32 c accu) lexbuf }
 
-and string_literal start_p enc accu = parse
-  | '\"'       { let chars = List.rev accu in
-                 STRING_LITERAL(enc, chars, loc_of_start_p start_p) }
+and string_literal startp enc accu = parse
+  | '\"'       { lexbuf.lex_start_p <- startp;
+                 List.rev accu }
   | '\n' | eof { fatal_error lexbuf "missing terminating '\"' character" }
-  | ""         { let c = char lexbuf in string_literal start_p enc (add_char enc c accu) lexbuf }
-
-and rc_literal start_p buf = parse
-  | '\"'       { (loc_of_start_p start_p, Buffer.contents buf) }
-  | eof { fatal_error lexbuf "missing terminating '\"' character" }
-  | ""         { rc_char buf; rc_literal start_p buf lexbuf }
+  | ""         { let c = char lexbuf in string_literal startp enc (add_char enc c accu) lexbuf }
 
 (* We assume gcc -E syntax but try to tolerate variations. *)
 and hash = parse
@@ -649,7 +539,7 @@ and hash = parse
     "pragma"
     whitespace_char_no_newline +
     ([^ '\n']* as s) '\n'
-      { new_line lexbuf; PRAGMA (s, loc_of_lb lexbuf) }
+      { new_line lexbuf; PRAGMA (s, currentLoc lexbuf) }
   | [^ '\n']* '\n'
       { warning lexbuf Diagnostics.Unnamed "unrecognized '#' line";
         new_line lexbuf; initial_linebegin lexbuf }
@@ -670,6 +560,11 @@ and singleline_comment = parse
   | '\n'   { new_line lexbuf }
   | eof    { () }
   | _      { singleline_comment lexbuf }
+
+and rc_annot_args = parse
+  | ")]]"  { [] }
+  | "\"" ([^ '"']* as a) "\")]]" { [a] }
+  | "\"" ([^ '"']* as a) "\"," { a ++ rc_annot_args lexbuf }
 
 {
   open Parser.MenhirLibParser.Inter
@@ -696,7 +591,7 @@ and singleline_comment = parse
       match !curr_id with
       | Some id ->
         curr_id := None;
-        let loc = loc_of_lb lexbuf in
+        let loc = currentLoc lexbuf in
         let token =
           if SSet.mem id !types_context then Pre_parser.TYPEDEF_NAME (id, ref TypedefId, loc)
           else Pre_parser.VAR_NAME (id, ref VarId, loc)
@@ -804,6 +699,13 @@ and singleline_comment = parse
       | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
       | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
       | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
+      | Pre_parser.RC_ANNOT (_, _, loc) ->
+          (* combine successive annots *)
+          let rec doAnnots () =
+            match Queue.peek tokens with
+            | Pre_parser.RC_ANNOT _ -> ignore (Queue.pop tokens); doAnnots ()
+          in
+          doAnnots(); loop (Parser.FUNCTION_ANNOT (LMap.find loc !rc_ctx))
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)
@@ -854,7 +756,6 @@ and singleline_comment = parse
       | Pre_parser.ALIGNAS loc -> loop (Parser.ALIGNAS loc)
       | Pre_parser.ALIGNOF loc -> loop (Parser.ALIGNOF loc)
       | Pre_parser.ATTRIBUTE loc -> loop (Parser.ATTRIBUTE loc)
-      | Pre_parser.RCANNO (a, loc) -> loop (Parser.RCANNO (a, loc))
       | Pre_parser.ASM loc -> loop (Parser.ASM loc)
       | Pre_parser.PRAGMA (s, loc) -> loop (Parser.PRAGMA (s, loc))
       | Pre_parser.PRE_NAME _ -> assert false

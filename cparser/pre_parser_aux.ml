@@ -22,3 +22,4 @@ type identifier_type =
 let save_context:(unit -> (unit -> unit)) ref = ref (fun _ -> assert false)
 let declare_varname:(string -> unit) ref = ref (fun _ -> assert false)
 let declare_typename:(string -> unit) ref = ref (fun _ -> assert false)
+let set_annot:(loc -> function_annot -> unit) ref = ref (fun _ _ -> assert false)

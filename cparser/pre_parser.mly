@@ -48,8 +48,9 @@
   VAR_NAME TYPEDEF_NAME
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
-%token<RcAnno.t * Cabs.loc> RCANNO
 %token<string * Cabs.loc> PRAGMA
+%token<string * string list * Cabs.loc> RC_ANNOT
+
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
   COLON AND MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN LEFT_ASSIGN
@@ -603,7 +604,6 @@ attribute_specifier:
 | PACKED LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN type_name RPAREN
-| RCANNO
     {}
 
 gcc_attribute_list:
@@ -705,10 +705,6 @@ direct_declarator:
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list? STAR RBRACK
-    { match snd x with
-      | Decl_ident -> (fst x, Decl_other)
-      | _ -> x }
 | x = direct_declarator LPAREN ctx = context_parameter_type_list RPAREN
     { match snd x with
       | Decl_ident -> (fst x, Decl_fun ctx)
@@ -781,7 +777,6 @@ direct_abstract_declarator:
 | direct_abstract_declarator? LBRACK type_qualifier_list? optional(assignment_expression, RBRACK)
 | direct_abstract_declarator? LBRACK STATIC type_qualifier_list? assignment_expression RBRACK
 | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-| direct_abstract_declarator? LBRACK type_qualifier_list? STAR RBRACK
 | ioption(direct_abstract_declarator) LPAREN context_parameter_type_list? RPAREN
     {}
 
@@ -836,7 +831,6 @@ block_item:
 | declaration(block_item)
 | statement
 | PRAGMA
-| RCANNO SEMICOLON
     {}
 
 expression_statement:
@@ -960,6 +954,14 @@ function_definition1:
       end;
       ctx }
 
+rc_attributes:
+| a = RC_ANNOT
+    { (snd (snd a), [a]) }
+| a = RC_ANNOT l = rc_attributes
+    { (snd (snd a), a::l) }
+
 function_definition:
 | ctx = function_definition1 compound_statement
     { ctx () }
+| attrs = rc_attributes ctx = function_definition1 compound_statement
+    { !set_annot (fst attrs) (rc_annot.function_annot attrs); ctx ()}

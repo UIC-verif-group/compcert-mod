@@ -16,15 +16,15 @@
 
 %{
 
-Require Extraction.
-Require Import List.
+From Coq Require Extraction.
+From Coq Require Import List.
 Require Cabs.
 
 %}
 
 %token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
 %token<Cabs.string * Cabs.loc> PRAGMA
-%token<RcAnno.t * Cabs.loc> RCANNO
+%token<Cabs.function_annot> FUNCTION_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -587,8 +587,6 @@ attribute_specifier:
     { (Cabs.ALIGNAS_ATTR (rev' args) loc, loc) }
 | loc = ALIGNAS LPAREN typ = type_name RPAREN
     { (Cabs.ALIGNAS_ATTR [Cabs.ALIGNOF typ] loc, loc) }
-| v = RCANNO
-    { (Cabs.RC_ATTR (fst v) (snd v), snd v) }
 
 gcc_attribute_list:
 | a = gcc_attribute
@@ -663,12 +661,6 @@ direct_declarator:
   expr = assignment_expression RBRACK
     { let 'Cabs.Name name typ attr loc := decl in
       Cabs.Name name (Cabs.ARRAY typ (rev' quallst) (Some (fst expr))) attr loc }
-| decl = direct_declarator LBRACK quallst = type_qualifier_list STAR RBRACK
-    { let 'Cabs.Name name typ attr loc := decl in
-      Cabs.Name name (Cabs.ARRAY typ (rev' quallst) None) attr loc }
-| decl = direct_declarator LBRACK STAR RBRACK
-    { let 'Cabs.Name name typ attr loc := decl in
-      Cabs.Name name (Cabs.ARRAY typ [] None) attr loc }
 | decl = direct_declarator LPAREN params = parameter_type_list RPAREN
     { let 'Cabs.Name name typ attr loc := decl in
       Cabs.Name name (Cabs.PROTO typ params) attr loc }
@@ -771,14 +763,6 @@ direct_abstract_declarator:
     { Cabs.ARRAY typ cvspec (Some (fst expr)) }
 | LBRACK cvspec = type_qualifier_list STATIC expr = assignment_expression RBRACK
     { Cabs.ARRAY Cabs.JUSTBASE cvspec (Some (fst expr)) }
-| typ = direct_abstract_declarator LBRACK cvspec = type_qualifier_list STAR RBRACK
-    { Cabs.ARRAY typ cvspec None }
-| typ = direct_abstract_declarator LBRACK STAR RBRACK
-    { Cabs.ARRAY typ [] None }
-| LBRACK cvspec = type_qualifier_list STAR RBRACK
-    { Cabs.ARRAY Cabs.JUSTBASE cvspec None }
-| LBRACK STAR RBRACK
-    { Cabs.ARRAY Cabs.JUSTBASE [] None }
 | typ = direct_abstract_declarator LPAREN params = parameter_type_list RPAREN
     { Cabs.PROTO typ params }
 | LPAREN params = parameter_type_list RPAREN
@@ -884,8 +868,6 @@ block_item:
 (* Non-standard *)
 | p = PRAGMA
     { Cabs.DEFINITION (Cabs.PRAGMA (fst p) (snd p)) }
-| v = RCANNO SEMICOLON
-    { Cabs.RC_STMT (fst v) (snd v) }
 
 (* 6.8.3 *)
 expression_statement:
@@ -1044,11 +1026,23 @@ function_definition:
   decl = declarator_noattrend
   dlist = declaration_list
   stmt = compound_statement
-   { Cabs.FUNDEF (fst specs) decl (List.rev' dlist) stmt (snd specs) }
+   { Cabs.FUNDEF (fst specs) decl None (List.rev' dlist) stmt (snd specs) }
 | specs = declaration_specifiers
   decl = declarator
   stmt = compound_statement
-    { Cabs.FUNDEF (fst specs) decl [] stmt (snd specs) }
+    { Cabs.FUNDEF (fst specs) decl None [] stmt (snd specs) }
+(* Non-standard *)
+| annot = FUNCTION_ANNOT
+  specs = declaration_specifiers
+  decl = declarator_noattrend
+  dlist = declaration_list
+  stmt = compound_statement
+   { Cabs.FUNDEF (fst specs) decl (Some annot) (List.rev' dlist) stmt (snd specs) }
+| annot = FUNCTION_ANNOT
+  specs = declaration_specifiers
+  decl = declarator
+  stmt = compound_statement
+    { Cabs.FUNDEF (fst specs) decl (Some annot) [] stmt (snd specs) }
 
 declaration_list:
 | d = declaration
