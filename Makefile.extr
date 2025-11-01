@@ -47,7 +47,7 @@ DIRS=extraction \
   lib common $(ARCH) backend cfrontend cparser driver \
   export debug
 
-INCLUDES=$(patsubst %,-I %, $(DIRS)) -I ~/.opam/4.14.2/lib/earley/core
+INCLUDES=$(patsubst %,-I %, $(DIRS))
 
 # Control of warnings:
 
@@ -56,6 +56,8 @@ extraction/%.cmx: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 extraction/%.cmo: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 cparser/pre_parser.cmx: WARNINGS += -w -41
 cparser/pre_parser.cmo: WARNINGS += -w -41
+cparser/rc_annot.cmx: WARNINGS += -w -44
+cparser/rc_annot.cmo: WARNINGS += -w -44
 
 # Turn warnings into errors, but not for released tarballs
 ifeq ($(wildcard .git),.git)
@@ -65,7 +67,7 @@ WARN_ERRORS=
 endif
 
 COMPFLAGS+=-g -strict-sequence -safe-string \
-  $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix \
+  $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix  -I ~/.opam/4.14.2/lib/earley/core \
   $(WARNINGS) $(WARN_ERRORS)
 
 # Using .opt compilers if available
@@ -130,8 +132,8 @@ clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-cparser/rc_annot.ml:
-	pa_ocaml refinedc/rc_annot.ml > $@
+cparser/rc_annot.ml: refinedc/rc_annot.ml
+	pa_ocaml $< > $@
 
 RCVSTGEN_OBJS:=$(shell $(MODORDER) export/ExportRcVst.cmx)
 
