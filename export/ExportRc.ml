@@ -276,6 +276,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   Sys.chdir c_file.root_dir; (* Move to the root to get relative paths. *)
   let c_file_rel = Filename.relative_path c_file.root_dir c_file.file_path in
   let ifile = Driveraux.tmp_file ".i" in
+  Frontend.init ();
   Frontend.preprocess c_file_rel ifile;
   (* Parse the comment annotations. *)
   let open Comment_annot in
@@ -452,7 +453,7 @@ let c_file =
 let check_cmd =
   let open Term in
   let term = const run $ opts $ c_file in
-  let doc = "Run RefiendC on the given C file." in
+  let doc = "Run RefinedC on the given C file." in
   Cmd.(v (info "check" ~version ~doc) term)
 
 (* Preprocessing command (useful for debugging). *)
@@ -460,6 +461,7 @@ let check_cmd =
 let run_cpp (*config*) c_file =
   (*output_lines stdout (Cerb_wrapper.cpp_lines config c_file);
   flush stdout*) let ifile = Driveraux.tmp_file ".i" in
+  Frontend.init ();
   Frontend.preprocess c_file ifile;
   output_lines stdout (read_file ifile)
 
