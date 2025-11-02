@@ -4,6 +4,9 @@ type t = { lineno : int;
    ident : int;
  }
 
+let location_to_string loc =
+  Printf.sprintf "%d:%d" loc.lineno loc.byteno
+
 type 'a located = { elt : 'a ; loc : t }
 
 let none = { lineno = 0; filename = ""; byteno = 0; ident = 0 }

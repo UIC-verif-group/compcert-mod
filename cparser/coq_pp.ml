@@ -1,8 +1,7 @@
-(* from https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/coq_pp.ml *)
+(* adapted from https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/coq_pp.ml *)
 open Format
 open Extra
 open Panic
-open Coq_ast
 open Rc_annot
 open Comment_annot
 
@@ -346,7 +345,7 @@ type import = string * string
 let pp_import ff (from, mod_name) =
   Format.fprintf ff "From %s Require Import %s.@;" from mod_name
 
-let pp_code : string -> import list -> Coq_ast.t pp =
+(*let pp_code : string -> import list -> Cabs.definition list pp =
     fun root_dir imports ff ast ->
   (* Formatting utilities. *)
   let pp fmt = Format.fprintf ff fmt in
@@ -359,7 +358,7 @@ let pp_code : string -> import list -> Coq_ast.t pp =
   pp "Set Default Proof Using \"Type\".@;@;";
 
   (* Printing generation data in a comment. *)
-  pp "(* Generated from [%s]. *)@;" ast.source_file;
+  pp "(* Generated from [%s]. *)@;" (*ast.source_file*) "";
 
   (* Opening the section. *)
   pp "@[<v 2>Section code.";
@@ -371,12 +370,12 @@ let pp_code : string -> import list -> Coq_ast.t pp =
         let open Location in
         let locs = ref [] in
         let files = ref [] in
-        let fn ({loc_file = file; _} as d) =
+        let fn ({filename = file; _} as d) =
           locs := d :: !locs;
           if not (List.mem file !files) then files := file :: !files
         in
-        Location.Pool.iter fn coq_locs;
-        let locs = List.sort (fun d1 d2 -> d1.loc_key - d2.loc_key) !locs in
+        (*Location.Pool.iter fn coq_locs;*)
+        let locs = List.sort (fun d1 d2 -> d1.lineno - d2.lineno) !locs in
         let files = List.mapi (fun i s -> (s, i)) !files in
         (locs, files)
       in
@@ -390,7 +389,7 @@ let pp_code : string -> import list -> Coq_ast.t pp =
       List.iter pp_file_def all_files;
       let pp_loc_def d =
         let open Location in
-        pp "@;Definition loc_%i : location_info := " d.loc_key;
+        pp "@;Definition loc_%i : location_info := " d.lineno;
         pp "LocationInfo file_%i %i %i %i %i."
           (List.assoc d.loc_file all_files)
           d.loc_line1 d.loc_col1 d.loc_line2 d.loc_col2
@@ -459,7 +458,7 @@ let pp_code : string -> import list -> Coq_ast.t pp =
   let pp_struct_union ((_, {struct_is_union; _}) as s) =
     if struct_is_union then pp_union s else pp_struct s
   in
-  List.iter pp_struct_union (sort_structs [] ast.structs);
+  List.iter pp_struct_union (sort_structs [] (*ast.structs*) []);
 
   (* Definition of functions. *)
   let pp_function_def (id, def) =
@@ -516,10 +515,10 @@ let pp_code : string -> import list -> Coq_ast.t pp =
     | FDef(def) -> pp_function_def (id, def)
     | _         -> ()
   in
-  List.iter pp_function ast.functions;
+  List.iter pp_function ast(*.functions*)(*prog_defs?*);
 
   (* Closing the section. *)
-  pp "@]@;End code.@]"
+  pp "@]@;End code.@]"*)
 
 type rec_mode =
   | Rec_none
@@ -719,9 +718,9 @@ let gather_struct_fields id s =
     | None           ->
         Panic.panic_no_pos "No annotation on field [%s] of struct [%s]." x id
   in
-  List.map fn s.struct_members
+  List.map fn s(*.struct_members*)
 
-let rec pp_struct_def_np structs r annot fields ff id =
+(*let rec pp_struct_def_np structs r annot fields ff id =
   let pp fmt = fprintf ff fmt in
   (* Print the part that may stand for dots in case of "typedef". *)
   let pp_dots ff () =
@@ -815,18 +814,19 @@ let rec pp_struct_def_np structs r annot fields ff id =
   reset_nroot_counter ();
   match annot.st_typedef with
   | None        -> pp_dots ff ()
-  | Some(_, ty) -> pp_type_expr_rec (Some(pp_dots)) r ff ty
+  | Some(_, ty) -> pp_type_expr_rec (Some(pp_dots)) r ff ty*)
 
-let collect_invs : func_def -> (string * state_descr) list = fun def ->
+(*let collect_invs : Cabs.definition -> (string * state_descr) list = fun def ->
   let fn id (annot, _) acc =
     match annot with
     | BA_none     -> acc
     | BA_loop(sd) -> (id, sd) :: acc
   in
-  SMap.fold fn def.func_blocks []
+  SMap.fold fn def.func_blocks []*)
 
+(* This needs to run at the Clight level, so it knows about temps vs. vars. *)
 let pp_spec : Coq_path.t -> import list -> inlined_code ->
-      typedef list -> string list -> Coq_ast.t pp =
+      typedef list -> string list -> Clight.program pp =
     fun coq_path imports inlined typedefs ctxt ff ast ->
 
   (* Formatting utilities. *)
@@ -852,7 +852,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp "Set Default Proof Using \"Type\".\n";
 
   (* Printing generation data in a comment. *)
-  pp "@;(* Generated from [%s]. *)" ast.source_file;
+  pp "@;(* Generated from [%s]. *)" (*ast.source_file*) "";
 
   (* Printing inlined code (from comments). *)
   pp_inlined true (Some "prelude") inlined.ic_prelude;
@@ -931,7 +931,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
         pp_instance "simplify_goal_val" "SimplifyGoal"
       end
   in
-  let pp_struct struct_id annot s =
+  (*let pp_struct struct_id annot s =
     (* Check if a type must be generated. *)
     if not (basic_struct_annot_defines_type annot) then () else
     (* Gather the field annotations. *)
@@ -942,7 +942,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       | Some(id,_) -> id
     in
     let pp_body r =
-      pp_struct_def_np ast.structs r annot fields ff struct_id;
+      pp_struct_def_np (*ast.structs*) [] r annot fields ff struct_id;
     in
     pp_type id annot.st_refined_by annot.st_parameters (not annot.st_immovable)
       annot.st_unfold_order pp_body
@@ -953,7 +953,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
         rather be placed on a struct definition." id;
     (* Extract the two fields of the wrapping structure (tag and union). *)
     let (tag_field, union_field) =
-      match s.struct_members with
+      match s(*.struct_members*) with
       | [tag_field ; union_field] -> (tag_field, union_field)
       | _                         ->
       Panic.panic_no_pos "Tagged union [%s] is ill-formed: it should have \
@@ -985,7 +985,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     (* Find the union and extract its fields and corresponding annotations. *)
     let union_cases =
       let union =
-        try List.assoc union_name ast.structs
+        try List.assoc union_name (*ast.structs*) []
         with Not_found -> assert false (* Unreachable thanks to Cerberus. *)
       in
       (* Some sanity checks. *)
@@ -1062,7 +1062,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       pp " => struct struct_%s [@@{type} " name;
       begin
         let s =
-          try List.assoc struct_id ast.structs
+          try List.assoc struct_id (*ast.structs*) []
           with Not_found -> assert false (* Unreachable thanks to Cerberus. *)
         in
         let fields = gather_struct_fields struct_id s in
@@ -1089,7 +1089,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     | None                  ->
         Panic.panic_no_pos "Annotations on struct [%s] are invalid." id
   in
-  List.iter pp_struct_or_tagged_union ast.structs;
+  List.iter pp_struct_or_tagged_union (*ast.structs*) [];*)
 
   (* Type definitions (from comments). *)
   let pp_typedef td =
@@ -1102,11 +1102,13 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   List.iter pp_typedef typedefs;
 
   (* Function specs. *)
-  let pp_spec (id, def_or_decl) =
+  let pp_spec def_or_decl =
+    let id = ??? 
+    in
     let annot =
       match def_or_decl with
-      | FDef({func_annot=Some(annot); _}) -> annot
-      | FDec(Some(annot))                 -> annot
+      | Cabs.FUNDEF (_, _, Some(annot), _, _, _) -> annot
+(*      | FDec(Some(annot))                 -> annot *)
       | _                                 ->
       Panic.panic_no_pos "Annotations on function [%s] are invalid." id
     in
@@ -1132,7 +1134,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       exist_names pp_prod exist_types pp_type_expr
       annot.fa_returns pp_constrs annot.fa_ensures
   in
-  List.iter pp_spec ast.functions;
+  List.iter pp_spec ast(*.functions*)(*prog_defs?*);
 
   (* Closing the section. *)
   pp "@]@;End spec.";
@@ -1156,8 +1158,8 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
 
-let pp_proof : Coq_path.t -> func_def -> import list -> string list
-    -> proof_kind -> Coq_ast.t pp =
+let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
+    -> proof_kind -> Cabs.definition list pp =
     fun coq_path def imports ctxt proof_kind ff ast ->
   (* Formatting utilities. *)
   let pp fmt = Format.fprintf ff fmt in
@@ -1185,34 +1187,34 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
   pp "Set Default Proof Using \"Type\".@;@;";
 
   (* Printing generation data in a comment. *)
-  pp "(* Generated from [%s]. *)@;" ast.source_file;
+  pp "(* Generated from [%s]. *)@;" (*ast.source_file*) "";
 
   (* Opening the section. *)
-  pp "@[<v 2>Section proof_%s.@;" def.func_name;
+  let (func_name, func_annot, func_args) = match def with
+    | Cabs.FUNDEF (_, Cabs.Name (n, Cabs.PROTO (_, (params, _)), _, _), Some(annot), _, _, _) -> (n, annot, params)
+    | _ -> assert false (* Unreachable. *)
+  in
+  pp "@[<v 2>Section proof_%s.@;" func_name;
   pp "Context `{!typeG Σ} `{!globalG Σ}.";
   List.iter (pp "@;%s.") ctxt;
 
   (* Statement of the typing proof. *)
-  let func_annot =
-    match def.func_annot with
-    | Some(annot) -> annot
-    | None        -> assert false (* Unreachable. *)
-  in
-  if List.length def.func_args <> List.length func_annot.fa_args then
+  if List.length func_args <> List.length func_annot.fa_args then
     Panic.panic_no_pos "Argument number missmatch between code and spec.";
-  pp "\n@;(* Typing proof for [%s]. *)@;" def.func_name;
+  pp "\n@;(* Typing proof for [%s]. *)@;" func_name;
   (* Get all globals, including those needed for inlined functions. *)
+  (* This isn't built into the CompCert AST, we'll have to do an analysis. *)
   let (used_globals, used_functions) =
-    let merge (g1, f1) (g2, f2) =
+    (*let merge (g1, f1) (g2, f2) =
       let dedup = List.dedup String.compare in
       (dedup (g1 @ g2), dedup (f1 @ f2))
     in
     let fn acc f =
-      match List.assoc_opt f ast.functions with
+      match List.assoc_opt f ast(*.functions*)(*prog_defs?*) with
       | Some(FDef(def)) when is_inlined def -> merge acc def.func_deps
       | _                                   -> acc
     in
-    List.fold_left fn def.func_deps (snd def.func_deps)
+    List.fold_left fn def.func_deps (snd def.func_deps)*) ([], [])
   in
   let deps = used_globals @ used_functions in
   let pp_args ff xs =
@@ -1221,14 +1223,14 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
     | [] -> ()
     | _  -> fprintf ff " (%a : loc)" (pp_sep " " pp_str) xs
   in
-  pp "@[<v 2>Lemma type_%s%a :@;" def.func_name pp_args deps;
+  pp "@[<v 2>Lemma type_%s%a :@;" func_name pp_args deps;
   begin
     let prefix = if used_functions = [] then "⊢ " else "" in
     let pp_impl ff def =
-      let (used_globals, used_functions) = def.func_deps in
+      let (used_globals, used_functions) = (*def.func_deps*) ([], []) in
       let wrap = used_globals <> [] || used_functions <> [] in
       if wrap then fprintf ff "(";
-      fprintf ff "impl_%s" def.func_name;
+      fprintf ff "impl_%s" func_name;
       List.iter (fprintf ff " global_%s") used_globals;
       List.iter (fprintf ff " global_%s") used_functions;
       if wrap then fprintf ff ")"
@@ -1236,7 +1238,7 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
     let pp_global f = pp "global_locs !! \"%s\" = Some global_%s →@;" f f in
     List.iter pp_global used_globals;
     let pp_prod = pp_as_prod (pp_simple_coq_expr true) in
-    let pp_global_type f =
+    (*let pp_global_type f =
       match List.assoc_opt f ast.global_vars with
       | Some(Some(global_type)) ->
           let (param_names, param_types) =
@@ -1248,12 +1250,12 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
             (pp_type_expr_rec None Rec_none) global_type.ga_type
       | _                       -> ()
     in
-    List.iter pp_global_type used_globals;
+    List.iter pp_global_type used_globals;*)
     let pp_dep f =
       let inlined_def =
-        match List.assoc_opt f ast.functions with
+        (*match List.assoc_opt f ast(*.functions*)(*prog_defs?*) with
         | Some(FDef(def)) when is_inlined def -> Some(def)
-        | _                                   -> None
+        | _                                   -> None*) None
       in
       pp "global_%s ◁ᵥ global_%s @@ " f f;
       begin
@@ -1264,14 +1266,14 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
       pp " -∗@;"
     in
     List.iter pp_dep used_functions;
-    pp "%styped_function %a type_of_%s.@]@;" prefix pp_impl def def.func_name
+    pp "%styped_function %a type_of_%s.@]@;" prefix pp_impl def func_name
   end;
 
   (* We have a manual proof. *)
   match proof_kind with
   | Proof_manual(_,_,thm) ->
       pp "Proof. refine %s. Qed." thm;
-      pp "@]@;End proof_%s.@]" def.func_name (* Section closing. *)
+      pp "@]@;End proof_%s.@]" func_name (* Section closing. *)
   | _                     ->
 
   (* We output a normal proof. *)
@@ -1286,13 +1288,13 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
   in
   pp "@[<v 2>Proof.@;";
   pp "Local Open Scope printing_sugar.@;";
-  pp "start_function \"%s\" (%a)" def.func_name
+  pp "start_function \"%s\" (%a)" func_name
     pp_intros func_annot.fa_parameters;
-  if def.func_vars <> [] || def.func_args <> [] then
+  if func_vars <> [] || func_args <> [] then
     begin
       pp " =>";
-      List.iter (fun (x,_) -> pp " arg_%s" x) def.func_args;
-      List.iter (fun (x,_) -> pp " local_%s" x) def.func_vars
+      List.iter (fun (x,_) -> pp " arg_%s" x) func_args;
+      List.iter (fun (x,_) -> pp " local_%s" x) func_vars
     end;
   pp ".@;";
   if func_annot.fa_parameters <> [] then
@@ -1412,12 +1414,12 @@ let pp_proof : Coq_path.t -> func_def -> import list -> string list
     (* Closing the box. *)
     pp "@;)%%I ::@]"
   in
-  let invs = collect_invs def in
+(*  let invs = collect_invs def in
   pp "split_blocks ((";
   List.iter pp_inv invs;
   pp "@;  ∅@;)%%I : gmap label (iProp Σ)) (";
   List.iter pp_hint def.func_hints;
-  pp "@;  @nil Prop@;).";
+  pp "@;  @nil Prop@;)."; *)
   let pp_do_step id =
     pp "@;- repeat liRStep; liShow.";
     pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." def.func_name id
@@ -1456,7 +1458,7 @@ type mode =
   | Spec of Coq_path.t * import list * inlined_code * typedef list * string list
   | Fprf of Coq_path.t * func_def * import list * string list * proof_kind
 
-let write : mode -> string -> Coq_ast.t -> unit = fun mode fname ast ->
+let write : mode -> string -> Cab.definition list -> unit = fun mode fname ast ->
   let pp =
     match mode with
     | Code(root_dir,imports)                 ->

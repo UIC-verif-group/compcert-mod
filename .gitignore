@@ -84,3 +84,5 @@
 .nra.cache
 .csdp.cache
 .vscode/
+refinedcc
+cparser/rc_annot.ml

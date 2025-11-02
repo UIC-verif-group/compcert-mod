@@ -386,7 +386,7 @@ rule initial = parse
                                   { let enc = encoding_of e in
                                     let l = string_literal lexbuf.lex_start_p enc [] lexbuf in
                                     STRING_LITERAL(enc, l, currentLoc lexbuf) }
-  | "[[rc::" ([^ '(' ']' '\n']* as n) '('
+  | "[[rc::" ([^ '(' ']' '\n']* as n) "("
                                   { let a = rc_annot_args lexbuf in
                                     RC_ANNOT {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
                                               Rc_annot.rc_attr_args = a } }
@@ -559,8 +559,11 @@ and rc_annot_args = parse
   | ")]]"  { [] }
   | "\"" ([^ '"']* as a) "\")]]" { [{ Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                       Rc_annot.rc_attr_arg_pieces = [] }] }
-  | "\"" ([^ '"']* as a) "\","   { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
+  | "\"" ([^ '"']* as a) "\"," whitespace_char_no_newline *
+                                 { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                      Rc_annot.rc_attr_arg_pieces = [] } :: rc_annot_args lexbuf }
+  | _ as c
+      { fatal_error lexbuf "invalid symbol %C" c }
 
 {
   open Parser.MenhirLibParser.Inter

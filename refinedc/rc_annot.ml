@@ -797,3 +797,15 @@ let global_annot : rc_attr list -> global_annot option = fun attrs ->
   match !typ with
   | Some(ty) -> Some {ga_parameters = !parameters; ga_type = ty}
   | None -> None
+
+type block_annot =
+  | BA_none
+  | BA_loop of state_descr
+
+type hint_kind =
+  | HK_block  of string
+  | HK_assert of int
+
+type hint =
+  { ht_kind  : hint_kind
+  ; ht_annot : state_descr }
