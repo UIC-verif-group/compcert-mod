@@ -2780,7 +2780,7 @@ let inherit_vararg env s sto ty =
 
 (* Function definitions *)
 
-let elab_fundef genv spec name defs body loc =
+let elab_fundef genv spec name annot defs body loc =
   (* We maintain two environments:
      - genv is the "global", file-scope environment.  It is enriched
        with the declaration of the function, and also with
@@ -2930,6 +2930,7 @@ let elab_fundef genv spec name defs body loc =
       fd_name = fun_id;
       fd_attrib = if noret then add_attributes [Attr("noreturn",[])] attr
                            else attr;
+      fd_annot = annot;
       fd_ret = ty_ret;
       fd_params = params;
       fd_vararg = vararg;
@@ -2991,10 +2992,10 @@ let elab_definition (for_loop: bool) (local: bool) (nonstatic_inline: bool)
   match def with
   (* "int f(int x) { ... }" *)
   (* "int f(x, y) double y; { ... }" *)
-  | FUNDEF(spec, name, _, defs, body, loc) ->
+  | FUNDEF(spec, name, annot, defs, body, loc) ->
       (* This should actually never be triggered, catched by pre-parser *)
       if local then error loc "function definition is not allowed here";
-      let env1 = elab_fundef env spec name defs body loc in
+      let env1 = elab_fundef env spec name annot defs body loc in
       ([], env1)
 
   (* "int x = 12, y[10], *z" *)

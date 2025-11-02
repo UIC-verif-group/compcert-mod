@@ -227,7 +227,7 @@ and slabel =
 (** Declarations *)
 
 and decl =
-  storage * ident * typ * init option
+  storage * ident * typ * init option (* annot? *)
 
 (** Function definitions *)
 
@@ -236,6 +236,8 @@ type fundef = {
     fd_inline: bool;
     fd_name: ident;
     fd_attrib: attributes;
+    fd_annot: Cabs.function_annot option;
+    (*fd_hints: hint list;*)
     fd_ret: typ;                   (* return type *)
     fd_params: (ident * typ) list; (* formal parameters *)
     fd_vararg: bool;               (* variable arguments? *)

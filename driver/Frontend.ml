@@ -99,6 +99,8 @@ let parse_c_file sourcename ifile =
   (* Save C AST if requested *)
   Cprint.print_if ast;
   (* Conversion to Csyntax *)
+  (* Csyntax is the first Rocq-based AST, so maybe we want to process annotations before that, on C? *)
+  (* Coq_pp.pp_spec sourcename ast *)
   let csyntax = Timing.time "CompCert C generation" C2C.convertProgram ast in
   (* Save CompCert C AST if requested *)
   PrintCsyntax.print_if csyntax;

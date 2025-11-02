@@ -64,6 +64,10 @@ cparser/coq_pp.cmx: WARNINGS += -w -44
 cparser/coq_pp.cmo: WARNINGS += -w -44
 cparser/coq_path.cmx: WARNINGS += -w -44
 cparser/coq_path.cmo: WARNINGS += -w -44
+driver/project.cmx: WARNINGS += -w -44
+driver/project.cmo: WARNINGS += -w -44
+export/ExportRc.cmx: WARNINGS += -w -44
+export/ExportRc.cmo: WARNINGS += -w -44
 
 # Turn warnings into errors, but not for released tarballs
 ifeq ($(wildcard .git),.git)
@@ -73,7 +77,9 @@ WARN_ERRORS=
 endif
 
 COMPFLAGS+=-g -strict-sequence -safe-string \
-  $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix -I ~/.opam/4.14.2/lib/earley/core -I ~/.opam/4.14.2/lib/ubase \
+  $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix \
+  -I ~/.opam/4.14.2/lib/earley/core -I ~/.opam/4.14.2/lib/ubase -I ~/.opam/4.14.2/lib/cmdliner \
+  -I ~/.opam/4.14.2/lib/toml -I ~/.opam/4.14.2/lib/ISO8601 \
   $(WARNINGS) $(WARN_ERRORS)
 
 # Using .opt compilers if available
@@ -96,7 +102,7 @@ PARSERS=cparser/pre_parser.mly
 LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
 	     lib/Readconfig.mll lib/Responsefile.mll
 
-LIBS=str.cmxa unix.cmxa earley_core.cmxa ubase.cmxa $(MENHIR_LIBS)
+LIBS=str.cmxa unix.cmxa earley_core.cmxa ubase.cmxa cmdliner.cmxa ISO8601.cmxa toml.cmxa $(MENHIR_LIBS)
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte rcvstgen rcvstgen.byte
@@ -145,7 +151,7 @@ clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 cparser/rc_annot.ml: refinedc/rc_annot.ml
 	pa_ocaml $< > $@
 
-RC_OBJS:=$(shell $(MODORDER) export/ExportRc.cmx)
+RC_OBJS:=$(shell $(MODORDER) export/ExportRc.cmx) cparser/stubs.o
 
 ifeq ($(OCAML_NATIVE_COMP),true)
 refinedcc: $(RC_OBJS)

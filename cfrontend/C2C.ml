@@ -1175,7 +1175,7 @@ let convertFundef loc env fd =
                                          fd.fd_vararg fd.fd_attrib;
            fn_params = params;
            fn_vars = vars;
-           fn_body = body'}))
+           fn_body = body' }))
 
 (** External function declaration *)
 

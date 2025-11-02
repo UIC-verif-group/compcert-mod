@@ -1,11 +1,19 @@
 (* adapted from https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/coq_pp.ml *)
 open Format
 open Extra
-open Panic
 open Rc_annot
 open Comment_annot
+open C
 
-(* Flags set by CLI. *)
+let proof_kind : C.fundef -> proof_kind = fun def ->
+  match def.fd_annot with
+  | None        -> Proof_normal
+  | Some(annot) -> annot.fa_proof_kind
+
+let is_inlined : C.fundef -> bool = fun def ->
+  proof_kind def = Proof_inlined
+
+  (* Flags set by CLI. *)
 let print_expr_locs = ref true
 let print_stmt_locs = ref true
 let no_mem_cast = ref false
@@ -63,37 +71,15 @@ let pp_simple_coq_expr wrap ff coq_e =
   | _                        ->
   Panic.panic_no_pos "Antiquotation forbidden here." (* FIXME location *)
 
-(* This is done by cfrontend/PrintClight.ml.
-let pp_int_type : Coq_ast.int_type pp = fun ff it ->
-  let pp fmt = Format.fprintf ff fmt in
-  match it with
-  | ItSize_t(true)      -> pp "ssize_t"
-  | ItSize_t(false)     -> pp "size_t"
-  | ItIntptr_t(true)    -> pp "intptr_t"
-  | ItIntptr_t(false)   -> pp "uintptr_t"
-  | ItPtrdiff_t         -> pp "ptrdiff_t"
-  | ItI8(true)          -> pp "i8"
-  | ItI8(false)         -> pp "u8"
-  | ItI16(true)         -> pp "i16"
-  | ItI16(false)        -> pp "u16"
-  | ItI32(true)         -> pp "i32"
-  | ItI32(false)        -> pp "u32"
-  | ItI64(true)         -> pp "i64"
-  | ItI64(false)        -> pp "u64"
-
-let rec pp_layout : bool -> Coq_ast.layout pp = fun wrap ff layout ->
+(* Can we do this at the C level? *)
+let rec pp_layout : bool -> Env.t -> typ pp = fun wrap env ff layout ->
   let pp fmt = Format.fprintf ff fmt in
   match layout with
-  | LVoid              -> pp "void_layout"
-  | LBool              -> pp "bool_layout"
-  | LPtr               -> pp "void*"
-  | _ when wrap        -> pp "(%a)" (pp_layout false) layout
-  | LStruct(id, false) -> pp "layout_of struct_%s" id
-  | LStruct(id, true ) -> pp "ul_layout union_%s" id
-  | LInt(i)            -> pp "it_layout %a" pp_int_type i
-  | LArray(layout, n)  -> pp "mk_array_layout %a %s"
-                            (pp_layout true) layout n
+  | TVoid _            -> pp "tvoid"
+  | _ when wrap        -> pp "(%a)" (pp_layout false env) layout
+  | _                  -> ExportCtypes.typ ff (C2C.convertTyp env layout)
 
+(* This is done by cfrontend/PrintClight.ml or similar.
 let rec pp_op_type : Coq_ast.op_type pp = fun ff ty ->
   let pp fmt = Format.fprintf ff fmt in
   match ty with
@@ -824,9 +810,19 @@ let gather_struct_fields id s =
   in
   SMap.fold fn def.func_blocks []*)
 
+let gd_name def_or_decl =
+  match def_or_decl.gdesc with
+  | Gdecl (_, n, _, _) -> n.name
+  | Gfundef fd -> fd.fd_name.name
+  | Gcompositedecl (_, n, _) -> n.name
+  | Gcompositedef (_, n, _, _) -> n.name
+  | Gtypedef (n, _) -> n.name
+  | Genumdef (n, _, _) -> n.name
+  | Gpragma s -> "pragma" ^ s
+
 (* This needs to run at the Clight level, so it knows about temps vs. vars. *)
 let pp_spec : Coq_path.t -> import list -> inlined_code ->
-      typedef list -> string list -> Clight.program pp =
+      typedef list -> string list -> C.program pp =
     fun coq_path imports inlined typedefs ctxt ff ast ->
 
   (* Formatting utilities. *)
@@ -852,7 +848,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp "Set Default Proof Using \"Type\".\n";
 
   (* Printing generation data in a comment. *)
-  pp "@;(* Generated from [%s]. *)" (*ast.source_file*) "";
+  pp "@;(* Generated from [%s]. *)" "";
 
   (* Printing inlined code (from comments). *)
   pp_inlined true (Some "prelude") inlined.ic_prelude;
@@ -1103,14 +1099,15 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
 
   (* Function specs. *)
   let pp_spec def_or_decl =
-    let id = ??? 
+    let id = gd_name def_or_decl
     in
     let annot =
-      match def_or_decl with
-      | Cabs.FUNDEF (_, _, Some(annot), _, _, _) -> annot
+      match def_or_decl.gdesc with
+      | Gfundef fd -> (match fd.fd_annot with Some annot -> annot
+                       | None -> Panic.panic_no_pos "Annotations on declaration [%s] are invalid." id)
 (*      | FDec(Some(annot))                 -> annot *)
       | _                                 ->
-      Panic.panic_no_pos "Annotations on function [%s] are invalid." id
+      Panic.panic_no_pos "Annotations on declaration [%s] are invalid." id
     in
     match annot.fa_proof_kind with
     | Proof_inlined ->
@@ -1158,8 +1155,8 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
 
-let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
-    -> proof_kind -> Cabs.definition list pp =
+let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
+    -> proof_kind -> C.program pp =
     fun coq_path def imports ctxt proof_kind ff ast ->
   (* Formatting utilities. *)
   let pp fmt = Format.fprintf ff fmt in
@@ -1190,9 +1187,9 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
   pp "(* Generated from [%s]. *)@;" (*ast.source_file*) "";
 
   (* Opening the section. *)
-  let (func_name, func_annot, func_args) = match def with
-    | Cabs.FUNDEF (_, Cabs.Name (n, Cabs.PROTO (_, (params, _)), _, _), Some(annot), _, _, _) -> (n, annot, params)
-    | _ -> assert false (* Unreachable. *)
+  let (func_name, func_args, func_vars) = (def.fd_name.name, def.fd_params, def.fd_locals)
+  in
+  let func_annot = match def.fd_annot with Some annot -> annot | None -> assert false
   in
   pp "@[<v 2>Section proof_%s.@;" func_name;
   pp "Context `{!typeG Σ} `{!globalG Σ}.";
@@ -1237,8 +1234,8 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
     in
     let pp_global f = pp "global_locs !! \"%s\" = Some global_%s →@;" f f in
     List.iter pp_global used_globals;
-    let pp_prod = pp_as_prod (pp_simple_coq_expr true) in
-    (*let pp_global_type f =
+    (*let pp_prod = pp_as_prod (pp_simple_coq_expr true) in
+    let pp_global_type f =
       match List.assoc_opt f ast.global_vars with
       | Some(Some(global_type)) ->
           let (param_names, param_types) =
@@ -1253,8 +1250,8 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
     List.iter pp_global_type used_globals;*)
     let pp_dep f =
       let inlined_def =
-        (*match List.assoc_opt f ast(*.functions*)(*prog_defs?*) with
-        | Some(FDef(def)) when is_inlined def -> Some(def)
+        (*match List.find f ast with
+        | Some(Gfundef(def)) when is_inlined def -> Some(def)
         | _                                   -> None*) None
       in
       pp "global_%s ◁ᵥ global_%s @@ " f f;
@@ -1293,8 +1290,8 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
   if func_vars <> [] || func_args <> [] then
     begin
       pp " =>";
-      List.iter (fun (x,_) -> pp " arg_%s" x) func_args;
-      List.iter (fun (x,_) -> pp " local_%s" x) func_vars
+      List.iter (fun (x,_) -> pp " arg_%s" x.name) func_args;
+      List.iter (fun (_,x,_,_) -> pp " local_%s" x.name) func_vars
     end;
   pp ".@;";
   if func_annot.fa_parameters <> [] then
@@ -1318,15 +1315,15 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
       let fn (id, ty) =
         (* Check if [id_var] is a function argument. *)
         try
-          let layout = List.assoc id def.func_args in
+          let (_, layout) = List.find (fun (n,_) -> n.name = id) func_args in
           (* Check for name clash with local variables. *)
-          if List.mem_assoc id def.func_vars then
+          if List.exists (fun (_,n,_,_) -> n.name = id) func_vars then
             Panic.panic_no_pos "[%s] denotes both an argument and a local \
-              variable of function [%s]." id def.func_name;
+              variable of function [%s]." id func_name;
           (* Check if the type is different for the toplevel one. *)
           let toplevel_ty =
             try
-              let i = List.find_index (fun (s,_) -> s = id) def.func_args in
+              let i = List.find_index (fun (n,_) -> n.name = id) func_args in
               List.nth func_annot.fa_args i
             with Not_found | Failure(_) -> assert false (* Unreachable. *)
           in
@@ -1336,7 +1333,7 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
         with Not_found ->
         (* Not a function argument, check that it is a local variable. *)
         try
-          let layout = List.assoc id def.func_vars in
+          let (_, _, layout, _) = List.find (fun (_,n,_,_) -> n.name = id) func_vars in
           ("local_" ^ id, (layout, Some(ty)))
         with Not_found ->
           Panic.panic_no_pos "[%s] is neither a local variable nor an \
@@ -1347,38 +1344,41 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
     let unused =
       let unused_args =
         let pred (id, _) =
-          let id = "arg_" ^ id in
+          let id = "arg_" ^ id.name in
           List.for_all (fun (id_var, _) -> id <> id_var) used
         in
-        let args = List.filter pred def.func_args in
+        let args = List.filter pred func_args in
         let fn (id, layout) =
           let ty =
             try
-              let i = List.find_index (fun (s,_) -> s = id) def.func_args in
+              let i = List.find_index (fun (s,_) -> s = id) func_args in
               List.nth func_annot.fa_args i
             with Not_found | Failure(_) -> assert false (* Unreachable. *)
           in
-          ("arg_" ^ id, (layout, Some(ty)))
+          ("arg_" ^ id.name, (layout, Some(ty)))
         in
         List.map fn args
       in
       let unused_vars =
-        let pred (id, _) =
-          let id = "local_" ^ id in
+        let pred (_, id, _, _) =
+          let id = "local_" ^ id.name in
           List.for_all (fun (id_var, _) -> id <> id_var) used
         in
-        let vars = List.filter pred def.func_vars in
-        List.map (fun (id, layout) -> ("local_" ^ id, (layout, None))) vars
+        let vars = List.filter pred func_vars in
+        List.map (fun (_, id, layout, _) -> ("local_" ^ id.name, (layout, None))) vars
       in
       unused_args @ unused_vars
     in
     let all_vars = if print_unused then unused @ used else used in
     let first = ref true in
     let pp_sep ff _ = if !first then first := false else fprintf ff " ∗" in
+    let env = let p = C2C.cleanupGlobals (Env.initial_declarations() @ ast) in
+      C2C.translEnv Env.empty p
+    in
     let pp_var ff (id, (layout, ty_opt)) =
       match ty_opt with
       | None     ->
-         fprintf ff "%a@;%s ◁ₗ uninit %a" pp_sep () id (pp_layout true) layout
+         fprintf ff "%a@;%s ◁ₗ uninit %a" pp_sep () id (pp_layout true env) layout
       | Some(ty) -> fprintf ff "%a@;%s ◁ₗ %a" pp_sep () id pp_type_expr ty
     in
     begin
@@ -1414,15 +1414,15 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
     (* Closing the box. *)
     pp "@;)%%I ::@]"
   in
-(*  let invs = collect_invs def in
+  let invs = (*collect_invs def*) [] in
   pp "split_blocks ((";
   List.iter pp_inv invs;
   pp "@;  ∅@;)%%I : gmap label (iProp Σ)) (";
-  List.iter pp_hint def.func_hints;
-  pp "@;  @nil Prop@;)."; *)
+  List.iter pp_hint (*def.func_hints*) [];
+  pp "@;  @nil Prop@;).";
   let pp_do_step id =
     pp "@;- repeat liRStep; liShow.";
-    pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." def.func_name id
+    pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." func_name id
   in
   List.iter pp_do_step (List.cons "#0" (List.map fst invs));
   pp "@;Unshelve. all: unshelve_sidecond; sidecond_hook; prepare_sideconditions; ";
@@ -1446,23 +1446,23 @@ let pp_proof : Coq_path.t -> Cabs.definition -> import list -> string list
     pp_tactics_all func_annot.fa_tactics
   in
   List.iter (pp "@;+ %s") tactics_items;
-  pp "@;all: print_sidecondition_goal \"%s\"." def.func_name;
-  pp "@;Unshelve. all: try done; try apply: inhabitant; print_remaining_shelved_goal \"%s\"." def.func_name;
+  pp "@;all: print_sidecondition_goal \"%s\"." func_name;
+  pp "@;Unshelve. all: try done; try apply: inhabitant; print_remaining_shelved_goal \"%s\"." func_name;
   pp "@]@;Qed.";
 
   (* Closing the section. *)
-  pp "@]@;End proof_%s.@]" def.func_name
+  pp "@]@;End proof_%s.@]" func_name
 
 type mode =
-  | Code of string * import list
+  (*| Code of string * import list   handled by Export *)
   | Spec of Coq_path.t * import list * inlined_code * typedef list * string list
-  | Fprf of Coq_path.t * func_def * import list * string list * proof_kind
+  | Fprf of Coq_path.t * fundef * import list * string list * proof_kind
 
-let write : mode -> string -> Cab.definition list -> unit = fun mode fname ast ->
+let write : mode -> string -> C.program -> unit = fun mode fname ast ->
   let pp =
     match mode with
-    | Code(root_dir,imports)                 ->
-        pp_code root_dir imports
+(*    | Code(root_dir,imports)                 ->
+        pp_code root_dir imports *)
     | Spec(coq_path,imports,inlined,tydefs,ctxt) ->
         pp_spec coq_path imports inlined tydefs ctxt
     | Fprf(coq_path,def,imports,ctxt,kind)       ->
