@@ -90,7 +90,7 @@ PARSERS=cparser/pre_parser.mly
 LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
 	     lib/Readconfig.mll lib/Responsefile.mll
 
-LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS)
+LIBS=str.cmxa unix.cmxa earley_core.cmxa $(MENHIR_LIBS)
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte rcvstgen rcvstgen.byte
@@ -116,7 +116,11 @@ ccomp.byte: $(CCOMP_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx)
+cparser/stubs.o: cparser/stubs.c
+	@echo "GCC   $<"
+	@gcc -c -o $@ $<
+
+CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx) cparser/stubs.o
 
 ifeq ($(OCAML_NATIVE_COMP),true)
 clightgen: $(CLIGHTGEN_OBJS)

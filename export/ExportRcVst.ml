@@ -1,4 +1,4 @@
-
+(*
 open Printf
 open Commandline
 open Clflags
@@ -153,3 +153,4 @@ with
   | CmdError msg -> error no_loc "%s" msg; exit 2
   | Abort -> exit 2
   | e -> crash e
+*)
