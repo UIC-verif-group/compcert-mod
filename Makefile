@@ -261,9 +261,14 @@ ccomp.byte: .depend.extr compcert.ini driver/Version.ml FORCE
 	$(MAKE) -f Makefile.extr ccomp.byte
 
 clightgen: .depend.extr compcert.ini driver/Version.ml FORCE
-	$(MAKE) -f Makefile.extr clightgen refinedcc
+	$(MAKE) -f Makefile.extr clightgen
 clightgen.byte: .depend.extr compcert.ini driver/Version.ml FORCE
-	$(MAKE) -f Makefile.extr clightgen.byte refinedcc.byte
+	$(MAKE) -f Makefile.extr clightgen.byte
+
+refinedcc: .depend.extr compcert.ini driver/Version.ml FORCE
+	$(MAKE) -f Makefile.extr refinedcc
+refinedcc.byte: .depend.extr compcert.ini driver/Version.ml FORCE
+	$(MAKE) -f Makefile.extr refinedcc.byte
 
 runtime:
 	$(MAKE) -C runtime

@@ -158,6 +158,38 @@ let get_c_file_data : string -> c_file_data = fun c_file ->
   in
   {orig_path; file_path; file_dir; base_name; root_dir; rel_path; proj_cfg}
 
+(* copy from ExportDriver so we don't link against its main *)
+let export_clight sourcename csyntax ofile =
+  let loc = Diagnostics.file_loc sourcename in
+  let clight =
+    match SimplExpr.transl_program csyntax with
+    | Errors.OK p ->
+        begin match SimplLocals.transf_program p with
+        | Errors.OK p' -> p'
+        | Errors.Error msg ->
+          Diagnostics.fatal_error loc "%a" Driveraux.print_error  msg
+        end
+    | Errors.Error msg ->
+      Diagnostics.fatal_error loc "%a" Driveraux.print_error msg in
+  (* Dump Clight in C syntax if requested *)
+  PrintClight.print_if_2 clight;
+  (* Print Clight in Coq syntax *)
+  let oc = open_out ofile in
+  ExportClight.print_program (Format.formatter_of_out_channel oc)
+                             clight sourcename false;
+  close_out oc
+
+(* From C source to exported AST *)
+let compile_c_file sourcename ifile ofile =
+  (*let set_dest dst opt ext =
+    dst := if !opt then Some (output_filename sourcename ~suffix:ext)
+      else None in
+  set_dest Cprint.destination option_dparse ".parsed.c";
+  set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
+  set_dest PrintClight.destination option_dclight ".light.c";*)
+  let cs = Frontend.parse_c_file sourcename ifile in
+  export_clight sourcename cs ofile
+
 (** Command line configuration for the ["check"] command. *)
 type config =
   { no_locs     : bool
@@ -262,7 +294,7 @@ let run : config -> string -> unit = fun cfg c_file ->
       c_file_rel ifile in
   (* Generate the code file. *)
   let open Coq_pp in
-  ExportDriver.compile_c_file c_file_rel ifile code_file;
+  compile_c_file c_file_rel ifile code_file;
   (* Generate the spec file. *)
   let mode = Spec(path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
   write mode spec_file coq_ast;
