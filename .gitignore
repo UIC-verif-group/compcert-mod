@@ -68,6 +68,8 @@
 /lib/Tokenize.ml
 /lib/Responsefile.ml
 /driver/Version.ml
+.depend
+.depend.extr
 # Documentation
 /doc/coq2html
 /doc/coq2html.ml

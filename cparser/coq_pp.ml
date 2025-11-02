@@ -842,7 +842,8 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   in
 
   (* Printing some header. *)
-  pp "@[<v 0>From refinedc.typing Require Import typing.@;";
+  pp "@[<v 0>From VST.veric Require Import make_compspecs.@;";
+  pp "From VST.typing Require Import typing.@;";
   pp "From %a Require Import generated_code.@;" Coq_path.pp coq_path;
   List.iter (pp_import ff) imports;
   pp "Set Default Proof Using \"Type\".\n";
@@ -850,12 +851,14 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   (* Printing generation data in a comment. *)
   pp "@;(* Generated from [%s]. *)" "";
 
+  pp "#[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.@;";
+
   (* Printing inlined code (from comments). *)
   pp_inlined true (Some "prelude") inlined.ic_prelude;
 
   (* Opening the section. *)
   pp "@;@[<v 2>Section spec.@;";
-  pp "Context `{!typeG Σ} `{!globalG Σ}.";
+  pp "Context `{!typeG OK_ty Σ} `{!globalG OK_ty Σ}.";
   List.iter (pp "@;%s.") ctxt;
 
   (* Printing inlined code (from comments). *)
@@ -1177,7 +1180,7 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   in
 
   (* Printing some header. *)
-  pp "@[<v 0>From refinedc.typing Require Import typing.@;";
+  pp "@[<v 0>From VST.typing Require Import typing.@;";
   pp "From %a Require Import generated_code.@;" Coq_path.pp coq_path;
   pp "From %a Require Import generated_spec.@;" Coq_path.pp coq_path;
   List.iter (pp_import ff) imports;
@@ -1192,7 +1195,7 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   let func_annot = match def.fd_annot with Some annot -> annot | None -> assert false
   in
   pp "@[<v 2>Section proof_%s.@;" func_name;
-  pp "Context `{!typeG Σ} `{!globalG Σ}.";
+  pp "Context `{!typeG OK_ty Σ} `{!globalG OK_ty Σ}.";
   List.iter (pp "@;%s.") ctxt;
 
   (* Statement of the typing proof. *)
