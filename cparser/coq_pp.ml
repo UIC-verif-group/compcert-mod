@@ -1293,10 +1293,11 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   if func_vars <> [] || func_args <> [] then
     begin
       pp " =>";
-      List.iter (fun (x,_) -> pp " arg_%s" x.name) func_args;
-      List.iter (fun (_,x,_,_) -> pp " local_%s" x.name) func_vars
+      List.iter (fun (x,_) -> pp " arg_%s" x.name) func_args(*;
+      List.iter (fun (_,x,_,_) -> pp " local_%s" x.name) func_vars*)
     end;
   pp ".@;";
+  pp "start_function2.@;";
   if func_annot.fa_parameters <> [] then
     begin
       let pp_var ff (x, _) = pp_print_string ff x in
@@ -1424,7 +1425,7 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   List.iter pp_hint (*def.func_hints*) [];
   pp "@;  @nil Prop@;).";
   let pp_do_step id =
-    pp "@;- repeat liRStep; liShow.";
+    pp "@;- repeat liRStep; try type_function_end; liShow.";
     pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." func_name id
   in
   List.iter pp_do_step (List.cons "#0" (List.map fst invs));
