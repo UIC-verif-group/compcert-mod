@@ -41,6 +41,9 @@ include Makefile.menhir
 cparser/pre_parser_messages.ml:
 	$(MAKE) -C cparser correct
 
+cparser/rc_annot.ml: refinedc/rc_annot.ml
+	pa_ocaml $< > $@
+
 # Directories containing plain Caml code
 
 DIRS=extraction \
@@ -147,9 +150,6 @@ endif
 clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
-
-cparser/rc_annot.ml: refinedc/rc_annot.ml
-	pa_ocaml $< > $@
 
 RC_OBJS:=$(shell $(MODORDER) export/ExportRc.cmx) cparser/stubs.o
 
