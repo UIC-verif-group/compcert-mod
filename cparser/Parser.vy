@@ -24,7 +24,9 @@ Require Cabs.
 
 %token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
 %token<Cabs.string * Cabs.loc> PRAGMA
-%token<Cabs.function_annot> FUNCTION_ANNOT
+%token<RcAnnot.function_annot> FUNCTION_ANNOT
+%token<RcAnnot.state_descr> LOOP_ANNOT
+%token<option RcAnnot.raw_expr_annot * Cabs.loc> INLINE_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -826,6 +828,8 @@ statement_dangerous:
 (* Non-standard *)
 | stmt = asm_statement
     { stmt }
+| annot = INLINE_ANNOT
+    { Cabs.ANNOT (fst annot) (snd annot) }
 
 statement_safe:
 | stmt = labeled_statement(statement_safe)
@@ -837,6 +841,8 @@ statement_safe:
 (* Non-standard *)
 | stmt = asm_statement
     { stmt }
+| annot = INLINE_ANNOT
+    { Cabs.ANNOT (fst annot) (snd annot) }
 
 (* 6.8.1 *)
 labeled_statement(last_statement):
@@ -896,40 +902,76 @@ selection_statement_safe:
 (* 6.8.5 *)
 iteration_statement(last_statement):
 | loc = WHILE LPAREN expr = expression RPAREN stmt = last_statement
-    { Cabs.WHILE (fst expr) stmt loc }
+    { Cabs.WHILE None (fst expr) stmt loc }
 | loc = DO stmt = statement_dangerous WHILE LPAREN expr = expression RPAREN SEMICOLON
-    { Cabs.DOWHILE (fst expr) stmt loc }
+    { Cabs.DOWHILE None (fst expr) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON
   expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON
   expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON expr3 = expression RPAREN 
   stmt = last_statement
-    { Cabs.FOR None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON expr3 = expression RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN decl1 = declaration SEMICOLON expr3 = expression RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN SEMICOLON SEMICOLON expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR None None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None None None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR None (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None None (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
 | loc = FOR LPAREN decl1 = declaration SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) None None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) None None stmt loc }
 | loc = FOR LPAREN SEMICOLON SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR None None None stmt loc }
+    { Cabs.FOR None None None None stmt loc }
+(* Non-standard *)
+| annot = LOOP_ANNOT loc = WHILE LPAREN expr = expression RPAREN stmt = last_statement
+    { Cabs.WHILE (Some annot) (fst expr) stmt loc }
+| annot = LOOP_ANNOT loc = DO stmt = statement_dangerous WHILE LPAREN expr = expression RPAREN SEMICOLON
+    { Cabs.DOWHILE (Some annot) (fst expr) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON
+  expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON
+  expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON expr3 = expression RPAREN 
+  stmt = last_statement
+    { Cabs.FOR (Some annot) None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON expr3 = expression RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration SEMICOLON expr3 = expression RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON SEMICOLON expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) None None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None None None stmt loc }
 
 (* 6.8.6 *)
 jump_statement:

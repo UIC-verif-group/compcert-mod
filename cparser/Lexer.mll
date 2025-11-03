@@ -22,6 +22,7 @@ open Pre_parser_aux
 open Location
 
 module SSet = Set.Make(String)
+module IMap = Map.Make(Int)
 
 let lexicon : (string, Cabs.loc -> token) Hashtbl.t = Hashtbl.create 17
 let ignored_keywords : SSet.t ref = ref SSet.empty
@@ -118,6 +119,15 @@ let _ =
   declare_typename := begin fun id ->
     types_context := SSet.add id !types_context
   end
+
+let annots_context : rc_annot_type IMap.t ref = ref IMap.empty
+
+let _ =
+  set_annot_type := begin fun i t ->
+    annots_context := IMap.add i t !annots_context
+  end
+
+let annot_index = ref 0
 
 let init filename channel : Lexing.lexbuf =
   let lb = Lexing.from_channel channel in
@@ -387,9 +397,10 @@ rule initial = parse
                                     let l = string_literal lexbuf.lex_start_p enc [] lexbuf in
                                     STRING_LITERAL(enc, l, currentLoc lexbuf) }
   | "[[rc::" ([^ '(' ']' '\n']* as n) "("
-                                  { let a = rc_annot_args lexbuf in
-                                    RC_ANNOT {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
-                                              Rc_annot.rc_attr_args = a } }
+                                  { let i = !annot_index in annot_index := i + 1;
+                                    let a = rc_annot_args lexbuf in
+                                    RC_ATTR (i, {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
+                                                 Rc_annot.rc_attr_args = a }) }
   | "..."                         { ELLIPSIS(currentLoc lexbuf) }
   | "+="                          { ADD_ASSIGN(currentLoc lexbuf) }
   | "-="                          { SUB_ASSIGN(currentLoc lexbuf) }
@@ -698,14 +709,19 @@ and rc_annot_args = parse
       | Pre_parser.QUESTION loc -> loop (Parser.QUESTION loc)
       | Pre_parser.RBRACE loc -> loop (Parser.RBRACE loc)
       | Pre_parser.RBRACK loc -> loop (Parser.RBRACK loc)
-      | Pre_parser.RC_ANNOT a ->
+      | Pre_parser.RC_ATTR (i, a) ->
           (* combine consecutive annots *)
-          let rec doAnnots str =
+          let rec doAttrs str =
             match Queue.peek tokens with
-            | Pre_parser.RC_ANNOT a -> ignore (Queue.pop tokens); doAnnots (str @ [a])
+            | Pre_parser.RC_ATTR (_, a) -> ignore (Queue.pop tokens); doAttrs (str @ [a])
             | _ -> str
           in
-          let annot = Rc_annot.function_annot (doAnnots [a]) in loop (Parser.FUNCTION_ANNOT annot)
+          let attrs = doAttrs [a] in
+          (match IMap.find i !annots_context with
+           | FunctionAnnot -> loop (Parser.FUNCTION_ANNOT (Rc_annot.function_annot attrs))
+           | LoopAnnot -> loop (Parser.LOOP_ANNOT (snd (Rc_annot.loop_annot attrs)))
+           | InlineAnnot -> loop (Parser.INLINE_ANNOT (Rc_annot.raw_expr_annot attrs, a.Rc_annot.rc_attr_id.loc))
+           (* cook? when? *))
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)

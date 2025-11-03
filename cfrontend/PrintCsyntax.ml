@@ -335,15 +335,15 @@ let rec print_stmt p s =
               print_expr e
               print_stmt s1
               print_stmt s2
-  | Swhile(e, s) ->
+  | Swhile(sd, e, s) ->
       fprintf p "@[<v 2>while (%a) {@ %a@;<0 -2>}@]"
               print_expr e
               print_stmt s
-  | Sdowhile(e, s) ->
+  | Sdowhile(sd, e, s) ->
       fprintf p "@[<v 2>do {@ %a@;<0 -2>} while(%a);@]"
               print_stmt s
               print_expr e
-  | Sfor(s_init, e, s_iter, s_body) ->
+  | Sfor(sd, s_init, e, s_iter, s_body) ->
       fprintf p "@[<v 2>for (@[<hv 0>%a;@ %a;@ %a) {@]@ %a@;<0 -2>}@]"
               print_stmt_for s_init
               print_expr e
@@ -365,6 +365,8 @@ let rec print_stmt p s =
       fprintf p "%s:@ %a" (extern_atom lbl) print_stmt s1
   | Sgoto lbl ->
       fprintf p "goto %s;" (extern_atom lbl)
+  | Sannot _ ->
+      fprintf p "/*annotation*/;"
 
 and print_cases p cases =
   match cases with

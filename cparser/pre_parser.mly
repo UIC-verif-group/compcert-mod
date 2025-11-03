@@ -49,7 +49,7 @@
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
 %token<string * Cabs.loc> PRAGMA
-%token<Rc_annot.rc_attr> RC_ANNOT
+%token<int * Rc_annot.rc_attr> RC_ATTR
 
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
@@ -812,6 +812,16 @@ statement:
 | jump_statement
 | asm_statement
     {}
+| idx = rc_attributes iteration_statement
+    { !set_annot_type idx LoopAnnot }
+| idx = rc_attributes labeled_statement
+| idx = rc_attributes compound_statement
+| idx = rc_attributes expression_statement
+| idx = rc_attributes selection_statement
+| idx = rc_attributes iteration_statement
+| idx = rc_attributes jump_statement
+| idx = rc_attributes asm_statement
+    { !set_annot_type idx InlineAnnot }
 
 labeled_statement:
 | other_identifier COLON statement
@@ -954,14 +964,14 @@ function_definition1:
       end;
       ctx }
 
-rc_attributes:
-| RC_ANNOT
-    { }
-| RC_ANNOT rc_attributes
-    { }
-
 function_definition:
 | ctx = function_definition1 compound_statement
     { ctx () }
-| rc_attributes ctx = function_definition1 compound_statement
-    { ctx () }
+| idx = rc_attributes ctx = function_definition1 compound_statement
+    { !set_annot_type idx FunctionAnnot; ctx () }
+
+rc_attributes:
+| a = RC_ATTR
+    { fst a }
+| a = RC_ATTR rc_attributes
+    { fst a }

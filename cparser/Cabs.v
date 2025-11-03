@@ -15,6 +15,7 @@
 (* *********************************************************************)
 
 Require Import BinPos.
+Require Import RcAnnot.
 
 (* OCaml's string type. *)
 Parameter string : Type.
@@ -22,8 +23,6 @@ Parameter string : Type.
 Parameter char_code : Type.
 (* Context information. *)
 Parameter loc : Type.
-(* RefinedC annotation types. *)
-Parameter function_annot : Type.
 
 Record floatInfo := {
   isHex_FI:bool;
@@ -226,9 +225,9 @@ with statement :=
  | COMPUTATION : expression -> loc -> statement
  | BLOCK : list statement -> loc -> statement
  | If : expression -> statement -> option statement -> loc -> statement
- | WHILE : expression -> statement -> loc -> statement
- | DOWHILE : expression -> statement -> loc -> statement
- | FOR : option for_clause -> option expression -> option expression -> statement -> loc -> statement
+ | WHILE : option state_descr -> expression -> statement -> loc -> statement
+ | DOWHILE : option state_descr -> expression -> statement -> loc -> statement
+ | FOR : option state_descr -> option for_clause -> option expression -> option expression -> statement -> loc -> statement
  | BREAK : loc -> statement
  | CONTINUE : loc -> statement
  | RETURN : option expression -> loc -> statement
@@ -239,6 +238,7 @@ with statement :=
  | GOTO : string -> loc -> statement
  | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
+ | ANNOT : option raw_expr_annot -> loc -> statement
 
 with for_clause :=
  | FC_EXP : expression -> for_clause

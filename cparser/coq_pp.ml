@@ -71,13 +71,12 @@ let pp_simple_coq_expr wrap ff coq_e =
   | _                        ->
   Panic.panic_no_pos "Antiquotation forbidden here." (* FIXME location *)
 
-(* Can we do this at the C level? *)
-let rec pp_layout : bool -> Env.t -> typ pp = fun wrap env ff layout ->
+let rec pp_layout : bool -> Ctypes.coq_type pp = fun wrap ff layout ->
   let pp fmt = Format.fprintf ff fmt in
   match layout with
-  | TVoid _            -> pp "tvoid"
-  | _ when wrap        -> pp "(%a)" (pp_layout false env) layout
-  | _                  -> ExportCtypes.typ ff (C2C.convertTyp env layout)
+  | Ctypes.Tvoid       -> pp "tvoid"
+  | _ when wrap        -> pp "(%a)" (pp_layout false) layout
+  | _                  -> ExportCtypes.typ ff layout
 
 (* This is done by cfrontend/PrintClight.ml or similar.
 let rec pp_op_type : Coq_ast.op_type pp = fun ff ty ->
@@ -1158,6 +1157,55 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
 
+let pp_state_descr : bool -> (AST.ident * Ctypes.coq_type) list ->
+  (AST.ident * Ctypes.coq_type) list -> (AST.ident * Ctypes.coq_type) list -> state_descr pp =
+    fun print_exist fn_params fn_vars fn_temps ff sd ->
+  let pp fmt = Format.fprintf ff fmt in
+  (* Printing the existentials. *)
+  begin
+    if print_exist then
+      let pp_exists (id, e) =
+        pp "@;∃ %s : %a," id (pp_simple_coq_expr false) e
+      in
+      List.iter pp_exists sd.sd_exists;
+    else ()
+  end;
+  (* Compute the used arguments and variables. *)
+  let used =
+    let fn (id, ty) =
+      (* Check if [id_var] is a function argument. *)
+      try
+        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_params) in
+        (id, (true, layout, ty))
+      with Not_found ->
+      (* Not a function argument, check that it is a local variable. *)
+      try
+        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_vars) in
+        (id, (false, layout, ty))
+      with Not_found ->
+      try
+        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_temps) in
+        (id, (true, layout, ty))
+      with Not_found ->
+        Panic.panic_no_pos "[%s] is neither a local variable nor an \
+          argument." id
+    in
+    List.map fn sd.sd_inv_vars
+  in
+  let first = ref true in
+  let pp_sep ff _ = if !first then first := false else fprintf ff " ∗" in
+  let pp_var ff (id, (temp, layout, ty)) =
+    if temp then fprintf ff "%a@;(∃ val_%s, temp %s val_%s ∗ val_%s ◁ᵥₐₗ|%a| %a)" pp_sep () id id id id (pp_layout false) layout pp_type_expr ty
+    else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ %a)" pp_sep () id id (pp_layout true) layout id id pp_type_expr ty
+  in
+  begin
+    match (used, sd.sd_constrs) with
+    | ([], []) -> pp "True"
+    | (vs , cs) ->
+        List.iter (pp "%a" pp_var) vs;
+        List.iter (pp "%a@;%a" pp_sep () pp_constr) cs
+  end
+
 let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
     -> proof_kind -> C.program pp =
     fun coq_path def imports ctxt proof_kind ff ast ->
@@ -1203,7 +1251,7 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
     Panic.panic_no_pos "Argument number missmatch between code and spec.";
   pp "\n@;(* Typing proof for [%s]. *)@;" func_name;
   (* Get all globals, including those needed for inlined functions. *)
-  (* This isn't built into the CompCert AST, we'll have to do an analysis. *)
+  (* Do an analysis and add this information to the function AST at some point, as in ail_to_coq. *)
   let (used_globals, used_functions) =
     (*let merge (g1, f1) (g2, f2) =
       let dedup = List.dedup String.compare in
@@ -1303,132 +1351,11 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
       let pp_var ff (x, _) = pp_print_string ff x in
       pp "prepare_parameters (%a).@;" (pp_sep " " pp_var) func_annot.fa_parameters;
     end;
-
-  let pp_state_descr print_unused print_exist sd =
-    (* Printing the existentials. *)
-    begin
-      if print_exist then
-        let pp_exists (id, e) =
-          pp "@;∃ %s : %a," id (pp_simple_coq_expr false) e
-        in
-        List.iter pp_exists sd.sd_exists;
-      else ()
-    end;
-    (* Compute the used and unused arguments and variables. *)
-    let used =
-      let fn (id, ty) =
-        (* Check if [id_var] is a function argument. *)
-        try
-          let (_, layout) = List.find (fun (n,_) -> n.name = id) func_args in
-          (* Check for name clash with local variables. *)
-          if List.exists (fun (_,n,_,_) -> n.name = id) func_vars then
-            Panic.panic_no_pos "[%s] denotes both an argument and a local \
-              variable of function [%s]." id func_name;
-          (* Check if the type is different for the toplevel one. *)
-          let toplevel_ty =
-            try
-              let i = List.find_index (fun (n,_) -> n.name = id) func_args in
-              List.nth func_annot.fa_args i
-            with Not_found | Failure(_) -> assert false (* Unreachable. *)
-          in
-          if ty = toplevel_ty then
-            Panic.wrn None "Useless annotation for argument [%s]." id;
-          ("arg_" ^ id, (layout, Some(ty)))
-        with Not_found ->
-        (* Not a function argument, check that it is a local variable. *)
-        try
-          let (_, _, layout, _) = List.find (fun (_,n,_,_) -> n.name = id) func_vars in
-          ("local_" ^ id, (layout, Some(ty)))
-        with Not_found ->
-          Panic.panic_no_pos "[%s] is neither a local variable nor an \
-            argument." id
-      in
-      List.map fn sd.sd_inv_vars
-    in
-    let unused =
-      let unused_args =
-        let pred (id, _) =
-          let id = "arg_" ^ id.name in
-          List.for_all (fun (id_var, _) -> id <> id_var) used
-        in
-        let args = List.filter pred func_args in
-        let fn (id, layout) =
-          let ty =
-            try
-              let i = List.find_index (fun (s,_) -> s = id) func_args in
-              List.nth func_annot.fa_args i
-            with Not_found | Failure(_) -> assert false (* Unreachable. *)
-          in
-          ("arg_" ^ id.name, (layout, Some(ty)))
-        in
-        List.map fn args
-      in
-      let unused_vars =
-        let pred (_, id, _, _) =
-          let id = "local_" ^ id.name in
-          List.for_all (fun (id_var, _) -> id <> id_var) used
-        in
-        let vars = List.filter pred func_vars in
-        List.map (fun (_, id, layout, _) -> ("local_" ^ id.name, (layout, None))) vars
-      in
-      unused_args @ unused_vars
-    in
-    let all_vars = if print_unused then unused @ used else used in
-    let first = ref true in
-    let pp_sep ff _ = if !first then first := false else fprintf ff " ∗" in
-    let env = let p = C2C.cleanupGlobals (Env.initial_declarations() @ ast) in
-      C2C.translEnv Env.empty p
-    in
-    let pp_var ff (id, (layout, ty_opt)) =
-      match ty_opt with
-      | None     ->
-         fprintf ff "%a@;%s ◁ₗ uninit %a" pp_sep () id (pp_layout true env) layout
-      | Some(ty) -> fprintf ff "%a@;%s ◁ₗ %a" pp_sep () id pp_type_expr ty
-    in
-    begin
-      match (all_vars, sd.sd_constrs) with
-      | ([], []) -> pp "True"
-      | (vs , cs) ->
-          List.iter (pp "%a" pp_var) vs;
-          List.iter (pp "%a@;%a" pp_sep () pp_constr) cs
-    end;
-  in
-  let pp_inv (id, annot) =
-    (* Opening a box and printing the existentials. *)
-    pp "@;  @[<v 2><[ \"%s\" :=" id;
-    pp_state_descr true true annot;
-    (* Closing the box. *)
-    pp "@]@;]> $"
-  in
-  let pp_hint hint =
-    (* Opening a box. *)
-    pp "@;  @[<v 2>IPROP_HINT ";
-    begin match hint.ht_kind with
-    | HK_block bid ->
-       pp "(BLOCK_PRECOND \"%s\") (λ _ : unit," bid;
-       pp_state_descr false true hint.ht_annot
-    | HK_assert id ->
-       let (exist_idents, exist_types) = List.split hint.ht_annot.sd_exists in
-       pp "(ASSERT_COND \"%i\") (λ %a : %a,@;%a" id
-         (pp_encoded_patt_name false) exist_idents
-         (pp_as_prod (pp_simple_coq_expr true)) exist_types
-         pp_encoded_patt_bindings exist_idents;
-       pp_state_descr false false hint.ht_annot;
-    end;
-    (* Closing the box. *)
-    pp "@;)%%I ::@]"
-  in
-  let invs = (*collect_invs def*) [] in
-  pp "split_blocks ((";
-  List.iter pp_inv invs;
-  pp "@;  ∅@;)%%I : gmap label (iProp Σ)) (";
-  List.iter pp_hint (*def.func_hints*) [];
-  pp "@;  @nil Prop@;).";
   let pp_do_step id =
     pp "@;- repeat liRStep; try type_function_end; liShow.";
     pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." func_name id
   in
-  List.iter pp_do_step (List.cons "#0" (List.map fst invs));
+  List.iter pp_do_step (List.cons "#0" []); (* all one big block? *)
   pp "@;Unshelve. all: unshelve_sidecond; sidecond_hook; prepare_sideconditions; ";
   pp "normalize_and_simpl_goal; try solve_goal; unsolved_sidecond_hook.";
   let tactics_items =

@@ -260,7 +260,7 @@ let process_decl loc env ctx (sto, id, ty, optinit) k =
 
 let rec unblock_stmt env ctx ploc s =
   match s.sdesc with
-  | Sskip -> s
+  | Sskip | Sannot _ -> s
   | Sdo e ->
       add_lineno ctx ploc s.sloc
         {s with sdesc = Sdo(expand_expr true env e)}
@@ -272,17 +272,17 @@ let rec unblock_stmt env ctx ploc s =
         {s with sdesc = Sif(expand_expr true env e,
                             unblock_stmt env ctx s.sloc s1,
                             unblock_stmt env ctx s.sloc s2)}
-  | Swhile(e, s1) ->
+  | Swhile(sd, e, s1) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Swhile(expand_expr true env e,
+        {s with sdesc = Swhile(sd, expand_expr true env e,
                                unblock_stmt env ctx s.sloc s1)}
-  | Sdowhile(s1, e) ->
+  | Sdowhile(sd, s1, e) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sdowhile(unblock_stmt env ctx s.sloc s1,
+        {s with sdesc = Sdowhile(sd, unblock_stmt env ctx s.sloc s1,
                                  expand_expr true env e)}
-  | Sfor(s1, e, s2, s3) ->
+  | Sfor(sd, s1, e, s2, s3) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sfor(unblock_stmt env ctx s.sloc s1,
+        {s with sdesc = Sfor(sd, unblock_stmt env ctx s.sloc s1,
                              expand_expr true env e,
                              unblock_stmt env ctx s.sloc s2,
                              unblock_stmt env ctx s.sloc s3)}

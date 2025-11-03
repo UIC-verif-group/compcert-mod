@@ -206,9 +206,9 @@ and stmt_desc =
   | Sdo of exp
   | Sseq of stmt * stmt
   | Sif of exp * stmt * stmt
-  | Swhile of exp * stmt
-  | Sdowhile of stmt * exp
-  | Sfor of stmt * exp * stmt * stmt
+  | Swhile of RcAnnot.state_descr option * exp * stmt
+  | Sdowhile of RcAnnot.state_descr option * stmt * exp
+  | Sfor of RcAnnot.state_descr option * stmt * exp * stmt * stmt
   | Sbreak
   | Scontinue
   | Sswitch of exp * stmt
@@ -218,6 +218,7 @@ and stmt_desc =
   | Sblock of stmt list
   | Sdecl of decl
   | Sasm of attributes * string * asm_operand list * asm_operand list * string list
+  | Sannot of RcAnnot.raw_expr_annot option
 
 and slabel =
   | Slabel of string
@@ -236,7 +237,7 @@ type fundef = {
     fd_inline: bool;
     fd_name: ident;
     fd_attrib: attributes;
-    fd_annot: Cabs.function_annot option;
+    fd_annot: RcAnnot.function_annot option;
     (*fd_hints: hint list;*)
     fd_ret: typ;                   (* return type *)
     fd_params: (ident * typ) list; (* formal parameters *)

@@ -1064,15 +1064,15 @@ let rec convertStmt env s =
   | C.Sif(e, s1, s2) ->
       let te = convertExpr env e in
       swrap (Ctyping.sifthenelse te (convertStmt env s1) (convertStmt env s2))
-  | C.Swhile(e, s1) ->
+  | C.Swhile(sd, e, s1) ->
       let te = convertExpr env e in
-      swrap (Ctyping.swhile te (convertStmt env s1))
-  | C.Sdowhile(s1, e) ->
+      swrap (Ctyping.swhile sd te (convertStmt env s1))
+  | C.Sdowhile(sd, s1, e) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sdowhile te (convertStmt env s1))
-  | C.Sfor(s1, e, s2, s3) ->
+      swrap (Ctyping.sdowhile sd te (convertStmt env s1))
+  | C.Sfor(sd, s1, e, s2, s3) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sfor
+      swrap (Ctyping.sfor sd
                   (convertStmt env s1) te
                   (convertStmt env s2) (convertStmt env s3))
   | C.Sbreak ->
@@ -1102,6 +1102,8 @@ let rec convertStmt env s =
       if not !Clflags.option_finline_asm then
         unsupported "inline 'asm' statement (consider adding option [-finline-asm])";
       Csyntax.Sdo (convertAsm s.sloc env txt outputs inputs clobber)
+  | C.Sannot(a) ->
+      Csyntax.Sannot(a)
 
 and convertSwitch env is_64 = function
   | {sdesc = C.Sskip} ->

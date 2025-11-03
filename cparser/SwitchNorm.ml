@@ -82,9 +82,9 @@ let rec all_cases accu s =
   match s.sdesc with
   | Sseq(s1, s2) -> all_cases (all_cases accu s1) s2
   | Sif(_, s1, s2) -> all_cases (all_cases accu s1) s2
-  | Swhile(_, s1) -> all_cases accu s1
-  | Sdowhile(s1, _) -> all_cases accu s1
-  | Sfor(s1, _, s2, s3) -> all_cases (all_cases (all_cases accu s1) s2) s3
+  | Swhile(_, _, s1) -> all_cases accu s1
+  | Sdowhile(_, s1, _) -> all_cases accu s1
+  | Sfor(_, s1, _, s2, s3) -> all_cases (all_cases (all_cases accu s1) s2) s3
   | Sswitch(_, _) -> accu
   | Slabeled(Scase(e, n), s1) -> all_cases (Case(e, n) :: accu) s1
   | Slabeled(Sdefault, s1) -> all_cases (Default :: accu) s1
@@ -108,10 +108,10 @@ let substitute_cases case_table body end_label =
       match s.sdesc with
       | Sseq(s1, s2) -> Sseq(transf inloop s1, transf inloop s2)
       | Sif(e, s1, s2) -> Sif(e, transf inloop s1, transf inloop s2)
-      | Swhile(e, s1) -> Swhile(e, transf true s1)
-      | Sdowhile(s1, e) -> Sdowhile(transf true s1, e)
-      | Sfor(s1, e, s2, s3) ->
-          Sfor(transf inloop s1, e, transf inloop s2, transf true s3)
+      | Swhile(sd, e, s1) -> Swhile(sd, e, transf true s1)
+      | Sdowhile(sd, s1, e) -> Sdowhile(sd, transf true s1, e)
+      | Sfor(sd, s1, e, s2, s3) ->
+          Sfor(sd, transf inloop s1, e, transf inloop s2, transf true s3)
       | Sbreak -> if inloop then Sbreak else Sgoto end_label
       | Slabeled(lbl, s1) -> Slabeled(transf_label lbl, transf inloop s1)
       | Sblock  _ -> assert false
@@ -160,10 +160,10 @@ let rec transform_stmt s =
       match s.sdesc with
       | Sseq(s1, s2) -> Sseq(transform_stmt s1, transform_stmt s2)
       | Sif(e, s1, s2) -> Sif(e, transform_stmt s1, transform_stmt s2)
-      | Swhile(e, s1) -> Swhile(e, transform_stmt s1)
-      | Sdowhile(s1, e) -> Sdowhile(transform_stmt s1, e)
-      | Sfor(s1, e, s2, s3) ->
-          Sfor(transform_stmt s1, e, transform_stmt s2, transform_stmt s3)
+      | Swhile(sd, e, s1) -> Swhile(sd, e, transform_stmt s1)
+      | Sdowhile(sd, s1, e) -> Sdowhile(sd, transform_stmt s1, e)
+      | Sfor(sd, s1, e, s2, s3) ->
+          Sfor(sd, transform_stmt s1, e, transform_stmt s2, transform_stmt s3)
       | Sswitch(e, s1) -> normalize_switch s.sloc e (transform_stmt s1)
       | Slabeled(lbl, s1) -> Slabeled(lbl, transform_stmt s1)
       | Sblock sl -> Sblock(List.map transform_stmt sl)

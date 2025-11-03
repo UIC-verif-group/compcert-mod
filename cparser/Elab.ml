@@ -3031,9 +3031,9 @@ let stmt_labels stmt =
   | BLOCK(b, _) -> do_block b
   | If(_, s1, Some s2, _) -> do_stmt s1; do_stmt s2
   | If(_, s1, None, _) -> do_stmt s1
-  | WHILE(_, s1, _) -> do_stmt s1
-  | DOWHILE(_, s1, _) -> do_stmt s1
-  | FOR(_, _, _, s1, _) -> do_stmt s1
+  | WHILE(_, _, s1, _) -> do_stmt s1
+  | DOWHILE(_, _, s1, _) -> do_stmt s1
+  | FOR(_, _, _, _, s1, _) -> do_stmt s1
   | SWITCH(_, s1, _) -> do_stmt s1
   | CASE(_, s1, _) -> do_stmt s1
   | DEFAULT(s1, _) -> do_stmt s1
@@ -3063,9 +3063,9 @@ let check_switch_cases switch_body =
     | Sdo _ -> ()
     | Sseq(s1, s2) -> check s1; check s2
     | Sif(_, s1, s2) -> check s1; check s2
-    | Swhile(_, s1) -> check s1
-    | Sdowhile(s1, _) -> check s1
-    | Sfor(s1, _, s2, s3) -> check s1; check s2; check s3
+    | Swhile(_, _, s1) -> check s1
+    | Sdowhile(_, s1, _) -> check s1
+    | Sfor(_, s1, _, s2, s3) -> check s1; check s2; check s3
     | Sbreak -> ()
     | Scontinue -> ()
     | Sswitch(_, _) -> () (* already checked during elaboration of this switch *)
@@ -3089,6 +3089,7 @@ let check_switch_cases switch_body =
     | Sblock sl -> List.iter check sl
     | Sdecl _ -> ()
     | Sasm _ -> ()
+    | Sannot _ -> ()
   in check switch_body
 
 (* Elaboration of statements *)
@@ -3149,23 +3150,23 @@ let rec elab_stmt env ctx s =
 
 (* 6.8.5 Iterative statements *)
 
-  | WHILE(a, s1, loc) ->
+  | WHILE(sd, a, s1, loc) ->
       let a',env' = elab_expr ctx loc (Env.new_scope env) a in
       if not (is_scalar_type env' a'.etyp) then
         error loc "controlling expression of 'while' does not have scalar type (%a invalid)"
           (print_typ env') a'.etyp;
       let s1' = elab_stmt_new_scope env' (ctx_loop ctx) s1 in
-      { sdesc = Swhile(a', s1'); sloc = elab_loc loc },env
+      { sdesc = Swhile(sd, a', s1'); sloc = elab_loc loc },env
 
-  | DOWHILE(a, s1, loc) ->
+  | DOWHILE(sd, a, s1, loc) ->
       let s1' = elab_stmt_new_scope env (ctx_loop ctx) s1 in
       let a',env' = elab_expr ctx loc (Env.new_scope env) a in
       if not (is_scalar_type env' a'.etyp) then
         error loc "controlling expression of 'while' does not have scalar type (%a invalid)"
           (print_typ env') a'.etyp;
-      { sdesc = Sdowhile(s1', a'); sloc = elab_loc loc },env
+      { sdesc = Sdowhile(sd, s1', a'); sloc = elab_loc loc },env
 
-  | FOR(fc, a2, a3, s1, loc) ->
+  | FOR(sd, fc, a2, a3, s1, loc) ->
       let env' = Env.new_scope env in
       let (a1', env_decls, decls') =
         match fc with
@@ -3190,7 +3191,7 @@ let rec elab_stmt env ctx s =
         error loc "controlling expression of 'for' does not have scalar type (%a invalid)" (print_typ env) a2'.etyp;
       let a3',env_for = elab_for_expr ctx loc env_test a3 in
       let s1' = elab_stmt_new_scope env_for (ctx_loop ctx) s1 in
-      let sfor = { sdesc = Sfor(a1', a2', a3', s1'); sloc = elab_loc loc } in
+      let sfor = { sdesc = Sfor(sd, a1', a2', a3', s1'); sloc = elab_loc loc } in
       begin match decls' with
       | None -> sfor,env
       | Some sl -> { sdesc = Sblock (sl @ [sfor]); sloc = elab_loc loc },env
@@ -3256,6 +3257,10 @@ let rec elab_stmt env ctx s =
 (* 6.8.3 Null statements *)
   | NOP loc ->
       { sdesc = Sskip; sloc = elab_loc loc },env
+
+(* RefinedC annotations *)
+  | ANNOT(a, loc) ->
+      { sdesc = Sannot a; sloc = elab_loc loc },env
 
 (* Traditional extensions *)
   | ASM(cv_specs, wide, chars, outputs, inputs, flags, loc) ->

@@ -556,23 +556,23 @@ Fixpoint transl_stmt (s: Csyntax.statement) : mon statement :=
         ret (Ssequence s' Sskip)
       else
         ret (Ssequence s' (Sifthenelse a ts1 ts2))
-  | Csyntax.Swhile e s1 =>
+  | Csyntax.Swhile sd e s1 =>
       do s' <- transl_if e Sskip Sbreak;
       do ts1 <- transl_stmt s1;
-      ret (Sloop (Ssequence s' ts1) Sskip)
-  | Csyntax.Sdowhile e s1 =>
+      ret (Sloop sd (Ssequence s' ts1) Sskip)
+  | Csyntax.Sdowhile sd e s1 =>
       do s' <- transl_if e Sskip Sbreak;
       do ts1 <- transl_stmt s1;
-      ret (Sloop ts1 s')
-  | Csyntax.Sfor s1 e2 s3 s4 =>
+      ret (Sloop sd ts1 s')
+  | Csyntax.Sfor sd s1 e2 s3 s4 =>
       do ts1 <- transl_stmt s1;
       do s' <- transl_if e2 Sskip Sbreak;
       do ts3 <- transl_stmt s3;
       do ts4 <- transl_stmt s4;
       if is_Sskip s1 then
-        ret (Sloop (Ssequence s' ts4) ts3)
+        ret (Sloop sd (Ssequence s' ts4) ts3)
       else
-        ret (Ssequence ts1 (Sloop (Ssequence s' ts4) ts3))
+        ret (Ssequence ts1 (Sloop sd (Ssequence s' ts4) ts3))
   | Csyntax.Sbreak =>
       ret Sbreak
   | Csyntax.Scontinue =>
@@ -591,6 +591,8 @@ Fixpoint transl_stmt (s: Csyntax.statement) : mon statement :=
       ret (Slabel lbl ts1)
   | Csyntax.Sgoto lbl =>
       ret (Sgoto lbl)
+  | Csyntax.Sannot a =>
+      ret (Sannot a)
   end
 
 with transl_lblstmt (ls: Csyntax.labeled_statements) : mon labeled_statements :=

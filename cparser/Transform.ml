@@ -145,19 +145,19 @@ let expand_postincrdecr ~read ~write env ctx op l =
 let stmt ~expr ?(decl = fun env decl -> assert false) env s =
   let rec stm s =
   match s.sdesc with
-  | Sskip -> s
+  | Sskip | Sannot _ -> s
   | Sdo e ->
       {s with sdesc = Sdo(expr s.sloc env Effects e)}
   | Sseq(s1, s2) ->
       {s with sdesc = Sseq(stm s1, stm s2)}
   | Sif(e, s1, s2) ->
       {s with sdesc = Sif(expr s.sloc env Val e, stm s1, stm s2)}
-  | Swhile(e, s1) ->
-      {s with sdesc = Swhile(expr s.sloc env Val e, stm s1)}
-  | Sdowhile(s1, e) ->
-      {s with sdesc = Sdowhile(stm s1, expr s.sloc env Val e)}
-  | Sfor(s1, e, s2, s3) ->
-      {s with sdesc = Sfor(stm s1, expr s.sloc env Val e, stm s2, stm s3)}
+  | Swhile(sd, e, s1) ->
+      {s with sdesc = Swhile(sd, expr s.sloc env Val e, stm s1)}
+  | Sdowhile(sd, s1, e) ->
+      {s with sdesc = Sdowhile(sd, stm s1, expr s.sloc env Val e)}
+  | Sfor(sd, s1, e, s2, s3) ->
+      {s with sdesc = Sfor(sd, stm s1, expr s.sloc env Val e, stm s2, stm s3)}
   | Sbreak -> s
   | Scontinue -> s
   | Sswitch(e, s1) ->

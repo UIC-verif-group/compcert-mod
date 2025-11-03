@@ -84,8 +84,11 @@ let rec expr p = function
       fprintf p "(Ealignof %a %a)" typ t1 typ t
 
 (* Statements *)
+let expr_annot f p = function
+  | Rc_annot.RawExprAnnot_annot s    -> fprintf p "RawExprAnnot_annot %s" s
+  | Rc_annot.RawExprAnnot_assert sd -> fprintf p "RawExprAnnot_assert %a" (Coq_pp.pp_state_descr false f.fn_params f.fn_vars f.fn_temps) sd
 
-let rec stmt p = function
+let rec stmt f p = function
   | Sskip ->
       fprintf p "Sskip"
   | Sassign(e1, e2) ->
@@ -102,38 +105,40 @@ let rec stmt p = function
         typlist tyl
         (print_list expr) el
   | Ssequence(Sskip, s2) ->
-      stmt p s2
+      stmt f p s2
   | Ssequence(s1, Sskip) ->
-      stmt p s1
+      stmt f p s1
   | Ssequence(s1, s2) ->
-      fprintf p "@[<hv 2>(Ssequence@ %a@ %a)@]" stmt s1 stmt s2
+      fprintf p "@[<hv 2>(Ssequence@ %a@ %a)@]" (stmt f) s1 (stmt f) s2
   | Sifthenelse(e, s1, s2) ->
-      fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e stmt s1 stmt s2
-  | Sloop (Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a)@]" expr e stmt s
-  | Sloop (Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a)@]" expr e stmt s
-  | Sloop(s1, s2) ->
-      fprintf p "@[<hv 2>(Sloop@ %a@ %a)@]" stmt s1 stmt s2
+      fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e (stmt f) s1 (stmt f) s2
+  | Sloop (sd, Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+  | Sloop (sd, Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+  | Sloop(sd, s1, s2) ->
+      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd (stmt f) s1 (stmt f) s2
   | Sbreak ->
       fprintf p "Sbreak"
   | Scontinue ->
       fprintf p "Scontinue"
   | Sswitch(e, cases) ->
-      fprintf p "@[<hv 2>(Sswitch %a@ %a)@]" expr e lblstmts cases
+      fprintf p "@[<hv 2>(Sswitch %a@ %a)@]" expr e (lblstmts f) cases
   | Sreturn e ->
       fprintf p "@[<hv 2>(Sreturn %a)@]" (print_option expr) e
   | Slabel(lbl, s1) ->
-      fprintf p "@[<hv 2>(Slabel %a@ %a)@]" ident lbl stmt s1
+      fprintf p "@[<hv 2>(Slabel %a@ %a)@]" ident lbl (stmt f) s1
   | Sgoto lbl ->
       fprintf p "(Sgoto %a)" ident lbl
+  | Sannot a ->
+      fprintf p "(Sannot %a)" (print_option (expr_annot f)) a
 
-and lblstmts p = function
+and lblstmts f p = function
   | LSnil ->
       (fprintf p "LSnil")
   | LScons(lbl, s, ls) ->
       fprintf p "@[<hv 2>(LScons %a@ %a@ %a)@]"
-              (print_option coqZ) lbl stmt s lblstmts ls
+              (print_option coqZ) lbl (stmt f) s (lblstmts f) ls
 
 (* Global definitions *)
 
@@ -145,7 +150,7 @@ let print_function p (id, f) =
   fprintf p "  fn_vars := %a;@ " (print_list (print_pair ident typ)) f.fn_vars;
   fprintf p "  fn_temps := %a;@ " (print_list (print_pair ident typ)) f.fn_temps;
   fprintf p "  fn_body :=@ ";
-  stmt p f.fn_body;
+  stmt f p f.fn_body;
   fprintf p "@ |}.@ @ "
 
 let print_globdef p (id, gd) =
@@ -201,7 +206,7 @@ let rec name_stmt = function
       name_opt_temporary optid; List.iter name_expr el
   | Ssequence(s1, s2) -> name_stmt s1; name_stmt s2
   | Sifthenelse(e, s1, s2) -> name_expr e; name_stmt s1; name_stmt s2
-  | Sloop(s1, s2) -> name_stmt s1; name_stmt s2
+  | Sloop(_, s1, s2) -> name_stmt s1; name_stmt s2
   | Sbreak -> ()
   | Scontinue -> ()
   | Sswitch(e, cases) -> name_expr e; name_lblstmts cases
@@ -209,6 +214,7 @@ let rec name_stmt = function
   | Sreturn None -> ()
   | Slabel(lbl, s1) -> name_stmt s1
   | Sgoto lbl -> ()
+  | Sannot _ -> ()
 
 and name_lblstmts = function
   | LSnil -> ()

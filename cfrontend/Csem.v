@@ -600,12 +600,12 @@ Fixpoint find_label (lbl: label) (s: statement) (k: cont)
       | Some sk => Some sk
       | None => find_label lbl s2 k
       end
-  | Swhile a s1 =>
+  | Swhile _ a s1 =>
       find_label lbl s1 (Kwhile2 a s1 k)
-  | Sdowhile a s1 =>
+  | Sdowhile _ a s1 =>
       find_label lbl s1 (Kdowhile1 a s1 k)
-  | Sfor a1 a2 a3 s1 =>
-      match find_label lbl a1 (Kseq (Sfor Sskip a2 a3 s1) k) with
+  | Sfor sd a1 a2 a3 s1 =>
+      match find_label lbl a1 (Kseq (Sfor sd Sskip a2 a3 s1) k) with
       | Some sk => Some sk
       | None =>
           match find_label lbl s1 (Kfor3 a2 a3 s1 k) with
@@ -663,7 +663,7 @@ Inductive estep: state -> trace -> state -> Prop :=
       estep (ExprState f (C a) k e m)
          E0 Stuckstate.
 
-Inductive sstep: state -> trace -> state -> Prop :=
+(*Inductive sstep: state -> trace -> state -> Prop :=
 
   | step_do_1: forall f x k e m,
       sstep (State f (Sdo x) k e m)
@@ -816,7 +816,7 @@ Inductive sstep: state -> trace -> state -> Prop :=
          E0 (ExprState f (C (Eval v ty)) k e m).
 
 Definition step (S: state) (t: trace) (S': state) : Prop :=
-  estep S t S' \/ sstep S t S'.
+  estep S t S' \/ sstep S t S'.*)
 
 End SEMANTICS.
 
@@ -844,7 +844,7 @@ Inductive final_state: state -> int -> Prop :=
 
 (** Wrapping up these definitions in a small-step semantics. *)
 
-Definition semantics (p: program) :=
+(*Definition semantics (p: program) :=
   Semantics_gen step (initial_state p) final_state (globalenv p) (globalenv p).
 
 (** This semantics has the single-event property. *)
@@ -862,4 +862,4 @@ Proof.
   inv H; simpl; try lia. inv H0; eauto; simpl; try lia.
   eapply external_call_trace_length; eauto.
   inv H; simpl; try lia. eapply external_call_trace_length; eauto.
-Qed.
+Qed.*)

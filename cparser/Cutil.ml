@@ -1317,15 +1317,16 @@ let rec subst_stmt phi s =
       | Sskip
       | Sbreak
       | Scontinue
-      | Sgoto _ -> s.sdesc
+      | Sgoto _
+      | Sannot _ -> s.sdesc
       | Sdo e -> Sdo (subst_expr phi e)
       | Sseq(s1, s2) -> Sseq (subst_stmt phi s1, subst_stmt phi s2)
       | Sif(e, s1, s2) ->
           Sif (subst_expr phi e, subst_stmt phi s1, subst_stmt phi s2)
-      | Swhile(e, s1) -> Swhile (subst_expr phi e, subst_stmt phi s1)
-      | Sdowhile(s1, e) -> Sdowhile (subst_stmt phi s1, subst_expr phi e)
-      | Sfor(s1, e, s2, s3) ->
-          Sfor (subst_stmt phi s1, subst_expr phi e,
+      | Swhile(sd, e, s1) -> Swhile (sd, subst_expr phi e, subst_stmt phi s1)
+      | Sdowhile(sd, s1, e) -> Sdowhile (sd, subst_stmt phi s1, subst_expr phi e)
+      | Sfor(sd, s1, e, s2, s3) ->
+          Sfor (sd, subst_stmt phi s1, subst_expr phi e,
                 subst_stmt phi s2, subst_stmt phi s3)
       | Sswitch(e, s1) -> Sswitch (subst_expr phi e, subst_stmt phi s1)
       | Slabeled(l, s1) -> Slabeled (l, subst_stmt phi s1)

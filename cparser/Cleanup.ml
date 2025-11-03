@@ -87,9 +87,9 @@ let rec add_stmt s =
   | Sdo e -> add_exp e
   | Sseq(s1, s2) -> add_stmt s1; add_stmt s2
   | Sif(e, s1, s2) -> add_exp e; add_stmt s1; add_stmt s2
-  | Swhile(e, s1) -> add_exp e; add_stmt s1
-  | Sdowhile(s1, e) -> add_stmt s1; add_exp e
-  | Sfor(e1, e2, e3, s1) -> add_stmt e1; add_exp e2; add_stmt e3; add_stmt s1
+  | Swhile(_, e, s1) -> add_exp e; add_stmt s1
+  | Sdowhile(_, s1, e) -> add_stmt s1; add_exp e
+  | Sfor(_, e1, e2, e3, s1) -> add_stmt e1; add_exp e2; add_stmt e3; add_stmt s1
   | Sbreak -> ()
   | Scontinue -> ()
   | Sswitch(e, s1) -> add_exp e; add_stmt s1
@@ -104,6 +104,7 @@ let rec add_stmt s =
   | Sasm(attr, template, outputs, inputs, flags) ->
       List.iter add_asm_operand outputs;
       List.iter add_asm_operand inputs
+  | Sannot _ -> ()
 
 let add_fundef f =
   add_typ f.fd_ret;

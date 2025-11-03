@@ -434,13 +434,13 @@ let rec stmt pp s =
   | Sif(e, s1, s2) ->
       fprintf pp  "@[<v 2>if (%a) {@ %a@;<0 -2>} else {@ %a@;<0 -2>}@]"
               exp (0, e) stmt_block s1 stmt_block s2
-  | Swhile(e, s1) ->
+  | Swhile(_, e, s1) ->
       fprintf pp "@[<v 2>while (%a) {@ %a@;<0 -2>}@]"
               exp (0, e) stmt_block s1
-  | Sdowhile(s1, e) ->
+  | Sdowhile(_, s1, e) ->
       fprintf pp "@[<v 2>do {@ %a@;<0 -2>} while(%a);@]"
               stmt_block s1 exp (0, e)
-  | Sfor(e1, e2, e3, s1) ->
+  | Sfor(_, e1, e2, e3, s1) ->
       fprintf pp "@[<v 2>for (@[<hv 0>%a;@ %a;@ %a) {@]@ %a@;<0 -2>}@]"
               opt_exp e1
               exp (0, e2)
@@ -481,6 +481,7 @@ let rec stmt pp s =
                  asm_operands outputs
                  asm_operands inputs
                  asm_flags flags
+  | Sannot(_) -> ()
 
 and slabel pp = function
   | Slabel s ->

@@ -162,10 +162,10 @@ and stmt_desc env = function
   | Sdo a -> Sdo (exp env a)
   | Sseq(s1, s2) -> Sseq(stmt env s1, stmt env s2)
   | Sif(a, s1, s2) -> Sif(exp env a, stmt env s1, stmt env s2)
-  | Swhile(a, s) -> Swhile(exp env a, stmt env s)
-  | Sdowhile(s, a) -> Sdowhile(stmt env s, exp env a)
-  | Sfor(a1, a2, a3, s) ->
-      Sfor(stmt env a1, exp env a2, stmt env a3, stmt env s)
+  | Swhile(sd, a, s) -> Swhile(sd, exp env a, stmt env s)
+  | Sdowhile(sd, s, a) -> Sdowhile(sd, stmt env s, exp env a)
+  | Sfor(sd, a1, a2, a3, s) ->
+      Sfor(sd, stmt env a1, exp env a2, stmt env a3, stmt env s)
   | Sbreak -> Sbreak
   | Scontinue -> Scontinue
   | Sswitch(a, s) -> Sswitch(exp env a, stmt env s)
@@ -179,6 +179,7 @@ and stmt_desc env = function
             List.map (asm_operand env) outputs,
             List.map (asm_operand env) inputs,
             flags)
+  | Sannot a -> Sannot a
 
 and stmt_or_decl env s =
   match s.sdesc with

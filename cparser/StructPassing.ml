@@ -445,7 +445,7 @@ let transf_asm_operand (lbl, cstr, e) = (lbl, cstr, transf_expr Val e) in
 
 let rec transf_stmt s =
   match s.sdesc with
-  | Sskip -> s
+  | Sskip | Sannot _ -> s
   | Sdo e ->
       {s with sdesc = Sdo(transf_expr Effects e)}
   | Sseq(s1, s2) ->
@@ -453,12 +453,12 @@ let rec transf_stmt s =
   | Sif(e, s1, s2) ->
       {s with sdesc = Sif(transf_expr Val e,
                           transf_stmt s1, transf_stmt s2)}
-  | Swhile(e, s1) ->
-      {s with sdesc = Swhile(transf_expr Val e, transf_stmt s1)}
-  | Sdowhile(s1, e) ->
-      {s with sdesc = Sdowhile(transf_stmt s1, transf_expr Val e)}
-  | Sfor(s1, e, s2, s3) ->
-      {s with sdesc = Sfor(transf_stmt s1, transf_expr Val e,
+  | Swhile(sd, e, s1) ->
+      {s with sdesc = Swhile(sd, transf_expr Val e, transf_stmt s1)}
+  | Sdowhile(sd, s1, e) ->
+      {s with sdesc = Sdowhile(sd, transf_stmt s1, transf_expr Val e)}
+  | Sfor(sd, s1, e, s2, s3) ->
+      {s with sdesc = Sfor(sd, transf_stmt s1, transf_expr Val e,
                            transf_stmt s2, transf_stmt s3)}
   | Sbreak -> s
   | Scontinue -> s
