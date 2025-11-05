@@ -86,7 +86,7 @@ let rec expr p = function
 (* Statements *)
 let expr_annot f p = function
   | Rc_annot.RawExprAnnot_annot s    -> fprintf p "RawExprAnnot_annot %s" s
-  | Rc_annot.RawExprAnnot_assert sd -> fprintf p "RawExprAnnot_assert %a" (Coq_pp.pp_state_descr false f.fn_params f.fn_vars f.fn_temps) sd
+  | Rc_annot.RawExprAnnot_assert sd -> fprintf p "RawExprAnnot_assert %a" (Coq_pp.pp_state_descr false false f.fn_params f.fn_vars f.fn_temps) sd
 
 let rec stmt f p = function
   | Sskip ->
@@ -113,11 +113,11 @@ let rec stmt f p = function
   | Sifthenelse(e, s1, s2) ->
       fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e (stmt f) s1 (stmt f) s2
   | Sloop (sd, Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
   | Sloop (sd, Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
   | Sloop(sd, s1, s2) ->
-      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true f.fn_params f.fn_vars f.fn_temps)) sd (stmt f) s1 (stmt f) s2
+      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd (stmt f) s1 (stmt f) s2
   | Sbreak ->
       fprintf p "Sbreak"
   | Scontinue ->
@@ -173,6 +173,7 @@ let print_ident_globdef p = function
 let prologue = "\
 From Coq Require Import String List ZArith.\n\
 From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.\n\
+From VST.typing Require Import ClightSugar.\n\
 Import Clightdefs.ClightNotations.\n\
 Local Open Scope Z_scope.\n\
 Local Open Scope string_scope.\n\

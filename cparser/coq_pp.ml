@@ -1157,9 +1157,15 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
 
-let pp_state_descr : bool -> (AST.ident * Ctypes.coq_type) list ->
+let var_name (id: AST.ident) =
+  try
+    "_" ^ Hashtbl.find Camlcoq.string_of_atom id
+  with Not_found ->
+    Printf.sprintf "%d" (Camlcoq.P.to_int id) ^ "%positive"
+
+let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
   (AST.ident * Ctypes.coq_type) list -> (AST.ident * Ctypes.coq_type) list -> state_descr pp =
-    fun print_exist fn_params fn_vars fn_temps ff sd ->
+    fun print_unused print_exist fn_params fn_vars fn_temps ff sd ->
   let pp fmt = Format.fprintf ff fmt in
   (* Printing the existentials. *)
   begin
@@ -1175,31 +1181,63 @@ let pp_state_descr : bool -> (AST.ident * Ctypes.coq_type) list ->
     let fn (id, ty) =
       (* Check if [id_var] is a function argument. *)
       try
-        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_params) in
-        (id, (true, layout, ty))
+        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_params) in
+        ("_" ^ id, (true, layout, Some(ty)))
       with Not_found ->
       (* Not a function argument, check that it is a local variable. *)
       try
-        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_vars) in
-        (id, (false, layout, ty))
+        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_vars) in
+        ("_" ^ id, (false, layout, Some(ty)))
       with Not_found ->
       try
-        let layout = List.assoc id (List.map (fun (a, b) -> (PrintClight.temp_name a, b)) fn_temps) in
-        (id, (true, layout, ty))
+        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_temps) in
+        ("_" ^ id, (true, layout, Some(ty)))
       with Not_found ->
         Panic.panic_no_pos "[%s] is neither a local variable nor an \
           argument." id
     in
     List.map fn sd.sd_inv_vars
   in
+  let unused =
+    let unused_args =
+      let pred (id, _) =
+        List.for_all (fun (id_var, _) -> var_name id <> "_" ^ id_var) used
+      in
+      let args = List.filter pred (fn_params @ fn_temps) in
+      let fn (id, layout) =
+        (*let ty =
+          try
+            let i = List.find_index (fun (s,_) -> s = id) def.func_args in
+            List.nth func_annot.fa_args i
+          with Not_found | Failure(_) -> assert false (* Unreachable. *)
+        in*)
+        (var_name id, (true, layout, None))
+      in
+      List.map fn args
+    in
+    let unused_vars =
+      let pred (id, _) =
+        List.for_all (fun (id_var, _) -> var_name id <> "_" ^ id_var) used
+      in
+      let vars = List.filter pred fn_vars in
+      List.map (fun (id, layout) -> (var_name id, (false, layout, None))) vars
+    in
+    unused_args @ unused_vars
+  in
+  let all_vars = if print_unused then unused @ used else used in
   let first = ref true in
   let pp_sep ff _ = if !first then first := false else fprintf ff " ∗" in
   let pp_var ff (id, (temp, layout, ty)) =
-    if temp then fprintf ff "%a@;(∃ val_%s, temp %s val_%s ∗ val_%s ◁ᵥₐₗ|%a| %a)" pp_sep () id id id id (pp_layout false) layout pp_type_expr ty
-    else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ %a)" pp_sep () id id (pp_layout true) layout id id pp_type_expr ty
+    match ty with
+    | Some ty -> 
+        if temp then fprintf ff "%a@;(∃ val_%s, temp %s val_%s ∗ val_%s ◁ᵥₐₗ|%a| %a)" pp_sep () id id id id (pp_layout false) layout pp_type_expr ty
+        else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ %a)" pp_sep () id id (pp_layout true) layout id id pp_type_expr ty
+    | None ->
+        if temp then fprintf ff "%a@;temp %s Vundef" pp_sep () id
+        else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ uninit %a)" pp_sep () id id (pp_layout true) layout id id (pp_layout true) layout
   in
   begin
-    match (used, sd.sd_constrs) with
+    match (all_vars, sd.sd_constrs) with
     | ([], []) -> pp "True"
     | (vs , cs) ->
         List.iter (pp "%a" pp_var) vs;
