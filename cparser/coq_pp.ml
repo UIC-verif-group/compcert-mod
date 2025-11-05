@@ -850,7 +850,9 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
 
   (* Printing some header. *)
   pp "@[<v 0>From VST.veric Require Import make_compspecs.@;";
+  pp "Set Warnings \"-notation-overridden,-custom-entry-overridden,-hiding-delimiting-key\".@;";
   pp "From VST.typing Require Import typing.@;";
+  pp "Set Warnings \"notation-overridden,custom-entry-overridden,hiding-delimiting-key\".@;";
   pp "From %a Require Import generated_code.@;" Coq_path.pp coq_path;
   List.iter (pp_import ff) imports;
   pp "Set Default Proof Using \"Type\".\n";
@@ -1270,10 +1272,12 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   in
 
   (* Printing some header. *)
-  pp "@[<v 0>From VST.typing Require Import typing.@;";
+  pp "@[<v 0>Set Warnings \"-notation-overridden,-custom-entry-overridden,-hiding-delimiting-key\".@;";
+  pp "From VST.typing Require Import typing.@;";
   pp "From %a Require Import generated_code.@;" Coq_path.pp coq_path;
   pp "From %a Require Import generated_spec.@;" Coq_path.pp coq_path;
   List.iter (pp_import ff) imports;
+  pp "Set Warnings \"notation-overridden,custom-entry-overridden,hiding-delimiting-key\".@;";
   pp "Set Default Proof Using \"Type\".@;@;";
 
   (* Printing generation data in a comment. *)
