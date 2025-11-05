@@ -703,7 +703,7 @@ let gather_struct_fields id s =
     | None           ->
         Panic.panic_no_pos "No annotation on field [%s] of struct [%s]." f.fld_name id
   in
-  List.map fn s(*.struct_members*)
+  List.map fn s
 
 let var_name (id: AST.ident) =
   try
@@ -741,7 +741,7 @@ let rec pp_struct_def_np structs r annot fields ff id =
     (* Printing the "padded". *)
     Option.iter (fun _ -> pp "padded (") annot.st_size;
     (* Printing the struct fields. *)
-    pp "struct struct_%s [@@{type}" id;
+    pp "struct _%s [@@{type}" id;
     let pp_field ff (_, ty, layout) =
       match layout with
       | TStruct(s_id, _) ->
@@ -789,7 +789,7 @@ let rec pp_struct_def_np structs r annot fields ff id =
       List.iter (pp " ;@;%a" pp_field) fields
     end;
     pp "@]@;]"; (* Close box for struct fields. *)
-    let fn = pp ") struct_%s %a" id (pp_simple_coq_expr true) in
+    let fn = pp ") _%s %a" id (pp_simple_coq_expr true) in
     Option.iter fn annot.st_size;
     (* Printing of constraints. *)
     if annot.st_constrs <> [] then
@@ -923,20 +923,20 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     pp "Proof. apply: (type_fixpoint_unfold2 %s_rec). Qed.\n" id;
 
     (* Generation of the global instances. *)
-    let pp_instance inst_name type_name =
+    let pp_instance is_val inst_name type_name =
       pp "@;Definition %s_%s_inst_generated %apatt__ :=@;"
         id inst_name pp_params params;
       pp "  [instance %s_eq _ _ (%s_unfold %apatt__) with %i%%N].@;"
         inst_name id pp_params params unfold_order;
       pp "Global Existing Instance %s_%s_inst_generated." id inst_name;
     in
-    pp_instance "simplify_hyp_place" "SimplifyHyp";
-    pp_instance "simplify_goal_place" "SimplifyGoal";
+    pp_instance false "simplify_hyp_place" "SimplifyHyp";
+    pp_instance false "simplify_goal_place" "SimplifyGoal";
     if movable then
       begin
         pp "\n";
-        pp_instance "simplify_hyp_val" "SimplifyHyp";
-        pp_instance "simplify_goal_val" "SimplifyGoal"
+        pp_instance true "simplify_hyp_val" "SimplifyHyp";
+        pp_instance true "simplify_goal_val" "SimplifyGoal"
       end
   in
   let structs = List.fold_left (fun l g -> match g.gdesc with C.Gcompositedef (a, b, c, d, e) -> l @ [(a, b, c, d, e)] | _ -> l) [] ast
@@ -1060,16 +1060,16 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     (* Definition for the tagged union info. *)
     pp "@[<v 2>Program Definition %s_tunion_info : tunion_info %a := {|@;"
       id (pp_simple_coq_expr true) tag_type_e;
-    pp "ti_base_layout := struct_%s;@;" id;
+    pp "ti_base_layout := _%s;@;" id;
     pp "ti_tag_field_name := \"%s\";@;" tag_field.fld_name;
     pp "ti_union_field_name := \"%s\";@;" union_field.fld_name;
-    pp "ti_union_layout := union_%s;@;" union_name.name;
+    pp "ti_union_layout := _%s;@;" union_name.name;
     pp "ti_tag := %s_tag;@;" id;
     pp "ti_type c :=@;";
     pp "  match c with@;";
     let fn (name, (c, args), struct_id) =
       pp "  | %s" c; List.iter (fun (x,_) -> pp " %s" x) args;
-      pp " => struct struct_%s [@@{type} " name;
+      pp " => struct _%s [@@{type} " name;
       begin
         let (_, _, _, _, s) =
           try List.find (fun (_, _, n, _, _) -> n = struct_id) structs

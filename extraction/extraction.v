@@ -125,6 +125,7 @@ Extract Constant RcAnnot.state_descr => "Rc_annot.state_descr".
 Extract Constant RcAnnot.raw_expr_annot => "Rc_annot.raw_expr_annot".
 Extract Constant RcAnnot.struct_annot => "Rc_annot.struct_annot".
 Extract Constant RcAnnot.member_annot => "Rc_annot.member_annot".
+Extract Constant RcAnnot.default_struct_annot => "Rc_annot.SA_basic Rc_annot.default_basic_struct_annot".
 
 (* Processor-specific extraction directives *)
 

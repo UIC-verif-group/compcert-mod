@@ -27,7 +27,7 @@ Require Cabs.
 %token<RcAnnot.function_annot> FUNCTION_ANNOT
 %token<RcAnnot.state_descr> LOOP_ANNOT
 %token<option RcAnnot.raw_expr_annot * Cabs.loc> INLINE_ANNOT
-%token<RcAnnot.struct_annot> STRUCT_ANNOT
+%token<option RcAnnot.struct_annot> STRUCT_ANNOT
 %token<RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
@@ -468,26 +468,26 @@ type_specifier:
 struct_or_union_specifier:
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union None (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union None (fst str_uni) None (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
-    { (Cabs.Tstruct_union None (fst str_uni) (Some (fst id)) None attrs,
+    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 (* Non-standard *)
 | str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union annot (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (Some annot) (fst str_uni) None (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union annot (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
-    { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) None attrs,
+    { (Cabs.Tstruct_union annot (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 
 struct_or_union:

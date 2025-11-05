@@ -4,3 +4,5 @@ Parameter state_descr : Type.
 Parameter raw_expr_annot : Type.
 Parameter struct_annot : Type.
 Parameter member_annot : Type.
+
+Parameter default_struct_annot : struct_annot.
