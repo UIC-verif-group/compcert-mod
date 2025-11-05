@@ -550,7 +550,7 @@ and pp_constr_rec : unit pp option -> rec_mode -> bool -> constr pp =
   match c with
   (* Needs no wrapping. *)
   | Constr_Coq(e)       ->
-      fprintf ff "⌜%a⌝" (pp_coq_expr false) e
+      fprintf ff "<affine> ⌜%a⌝" (pp_coq_expr false) e
   (* Apply wrapping. *)
   | _ when wrap         ->
       fprintf ff "(%a)" (pp_constr false) c
