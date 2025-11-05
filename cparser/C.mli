@@ -162,6 +162,7 @@ type field = {
     fld_typ: typ;
     fld_bitfield: int option;
     fld_anonymous: bool;
+    fld_annot: Rc_annot.member_annot option
 }
 
 type struct_or_union =
@@ -206,9 +207,9 @@ and stmt_desc =
   | Sdo of exp
   | Sseq of stmt * stmt
   | Sif of exp * stmt * stmt
-  | Swhile of RcAnnot.state_descr option * exp * stmt
-  | Sdowhile of RcAnnot.state_descr option * stmt * exp
-  | Sfor of RcAnnot.state_descr option * stmt * exp * stmt * stmt
+  | Swhile of Rc_annot.state_descr option * exp * stmt
+  | Sdowhile of Rc_annot.state_descr option * stmt * exp
+  | Sfor of Rc_annot.state_descr option * stmt * exp * stmt * stmt
   | Sbreak
   | Scontinue
   | Sswitch of exp * stmt
@@ -218,7 +219,7 @@ and stmt_desc =
   | Sblock of stmt list
   | Sdecl of decl
   | Sasm of attributes * string * asm_operand list * asm_operand list * string list
-  | Sannot of RcAnnot.raw_expr_annot option
+  | Sannot of Rc_annot.raw_expr_annot option
 
 and slabel =
   | Slabel of string
@@ -237,7 +238,7 @@ type fundef = {
     fd_inline: bool;
     fd_name: ident;
     fd_attrib: attributes;
-    fd_annot: RcAnnot.function_annot option;
+    fd_annot: Rc_annot.function_annot option;
     (*fd_hints: hint list;*)
     fd_ret: typ;                   (* return type *)
     fd_params: (ident * typ) list; (* formal parameters *)
@@ -260,7 +261,7 @@ and globdecl_desc =
   | Gfundef of fundef                   (* function definition *)
   | Gcompositedecl of struct_or_union * ident * attributes
                                         (* struct/union declaration *)
-  | Gcompositedef of struct_or_union * ident * attributes * field list
+  | Gcompositedef of Rc_annot.struct_annot option * struct_or_union * ident * attributes * field list
                                         (* struct/union definition *)
   | Gtypedef of ident * typ             (* typedef *)
   | Genumdef of ident * attributes * enumerator list

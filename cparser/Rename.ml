@@ -110,7 +110,8 @@ let field env f =
   { fld_name = f.fld_name;
     fld_typ = typ env f.fld_typ;
     fld_bitfield = f.fld_bitfield;
-    fld_anonymous = f.fld_anonymous;  }
+    fld_anonymous = f.fld_anonymous;
+    fld_annot = f.fld_annot  }
 
 let constant env = function
   | CEnum(id, v) -> CEnum(ident env id, v)
@@ -227,8 +228,8 @@ and globdecl_desc env = function
   | Gcompositedecl(kind, id, attr) ->
       let (id', env') = rename env id in
       (Gcompositedecl(kind, id', attr), env')
-  | Gcompositedef(kind, id, attr, members) ->
-      (Gcompositedef(kind, ident env id, attr, List.map (field env) members),
+  | Gcompositedef(a, kind, id, attr, members) ->
+      (Gcompositedef(a, kind, ident env id, attr, List.map (field env) members),
        env)
   | Gtypedef(id, ty) ->
       let (id', env') = rename env id in

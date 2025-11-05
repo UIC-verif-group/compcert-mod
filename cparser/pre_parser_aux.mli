@@ -33,9 +33,9 @@ type rc_annot_type =
   | FunctionAnnot
   | LoopAnnot
   | InlineAnnot
-  (* | CallAnnot https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/ail_to_coq.ml?ref_type=heads#L741 *)
+  (* | ArgAnnot https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/ail_to_coq.ml?ref_type=heads#L741 *)
   (* | GlobalAnnot *)
-  (* | MemberAnnot
-     | StructAnnot *)
+  | StructAnnot
+  | MemberAnnot
 
 val set_annot_type : (int -> rc_annot_type -> unit) ref

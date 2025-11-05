@@ -165,7 +165,7 @@ let rec add_needed_globdecls accu = function
           if needed f.fd_name
           then (add_fundef f; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
-      | Gcompositedef(_, id, _, flds) ->
+      | Gcompositedef(_, _, id, _, flds) ->
           if needed id
           then (List.iter add_field flds; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
@@ -204,7 +204,7 @@ let rec simpl_globdecls accu = function
         | Gdecl((sto, id, ty, init) as decl) -> visible_decl decl || needed id
         | Gfundef f -> visible_fundef f || needed f.fd_name
         | Gcompositedecl(_, id, _) -> needed id
-        | Gcompositedef(_, id, _, flds) -> needed id
+        | Gcompositedef(_, _, id, _, flds) -> needed id
         | Gtypedef(id, ty) -> needed id
         | Genumdef(id, _, enu) ->
             needed id || List.exists (fun (id, _, _) -> needed id) enu

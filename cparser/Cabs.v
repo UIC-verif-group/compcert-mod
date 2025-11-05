@@ -60,7 +60,7 @@ Inductive typeSpecifier := (* Merge all specifiers into one type *)
    * a forward declaration or simple reference to the type).
    * They also have a list of __attribute__s that appeared between the
    * keyword and the type name (definitions only) *)
-  | Tstruct_union : structOrUnion -> option string -> option (list field_group) -> list attribute -> typeSpecifier
+  | Tstruct_union : option struct_annot -> structOrUnion -> option string -> option (list field_group) -> list attribute -> typeSpecifier
   | Tenum : option string -> option (list (string * option expression * loc)) -> list attribute -> typeSpecifier
 
 with storage :=
@@ -101,7 +101,7 @@ with parameter :=
 
 (* The optional expression is the bitfield *)
 with field_group :=
-  | Field_group : list spec_elem -> list (option name * option expression) -> loc -> field_group
+  | Field_group : list spec_elem -> list (option member_annot * option name * option expression) -> loc -> field_group
   | Field_group_static_assert : expression -> loc -> constant -> loc -> loc -> field_group
 
 (* The decl_type is in the order in which they are printed. Only the name of

@@ -393,11 +393,11 @@ let rec transf_globdecls env accu = function
             (Env.add_composite env id (composite_info_decl su attr'))
             ({g with gdesc = Gcompositedecl(su, id, attr')} :: accu)
             gl
-      | Gcompositedef(su, id, attr, fl) ->
+      | Gcompositedef(a, su, id, attr, fl) ->
           let (attr', fl') = transf_composite g.gloc env su id attr fl in
           transf_globdecls
             (Env.add_composite env id (composite_info_def env su attr' fl'))
-            ({g with gdesc = Gcompositedef(su, id, attr', fl')} :: accu)
+            ({g with gdesc = Gcompositedef(a, su, id, attr', fl')} :: accu)
             gl
       | Gtypedef(id, ty) ->
           transf_globdecls

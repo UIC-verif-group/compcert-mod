@@ -694,18 +694,24 @@ let pp_constrs : constr list pp = fun ff cs ->
   | c :: cs -> pp_constr ff c; List.iter (fprintf ff " ∗ %a" pp_constr) cs
 
 let gather_struct_fields id s =
-  let fn (x, (ty_opt, _, layout)) =
-    match ty_opt with
-    | Some(MA_field(ty)) -> (x, ty, layout)
+  let fn f =
+    match f.fld_annot with
+    | Some(MA_field(ty)) -> (f.fld_name, ty, f.fld_typ)
     | Some(MA_utag(_))
     | Some(MA_none)      ->
-        Panic.panic_no_pos "Bad annotation on field [%s] of struct [%s]." x id
+        Panic.panic_no_pos "Bad annotation on field [%s] of struct [%s]." f.fld_name id
     | None           ->
-        Panic.panic_no_pos "No annotation on field [%s] of struct [%s]." x id
+        Panic.panic_no_pos "No annotation on field [%s] of struct [%s]." f.fld_name id
   in
   List.map fn s(*.struct_members*)
 
-(*let rec pp_struct_def_np structs r annot fields ff id =
+let var_name (id: AST.ident) =
+  try
+    "_" ^ Hashtbl.find Camlcoq.string_of_atom id
+  with Not_found ->
+    Printf.sprintf "%d" (Camlcoq.P.to_int id) ^ "%positive"
+
+let rec pp_struct_def_np structs r annot fields ff id =
   let pp fmt = fprintf ff fmt in
   (* Print the part that may stand for dots in case of "typedef". *)
   let pp_dots ff () =
@@ -738,25 +744,25 @@ let gather_struct_fields id s =
     pp "struct struct_%s [@@{type}" id;
     let pp_field ff (_, ty, layout) =
       match layout with
-      | LStruct(s_id, false) ->
-          let (s, structs) =
-            try (List.assoc s_id structs, List.remove_assoc s_id structs)
-            with Not_found -> Panic.panic_no_pos "Unknown struct [%s]." s_id
+      | TStruct(s_id, _) ->
+          let ((annot, _, _, _, fields), structs) =
+            try (List.find (fun (_, _, n, _, _) -> n = s_id) structs, List.filter (fun (_, _, n, _, _) -> n <> s_id) structs)
+            with Not_found -> Panic.panic_no_pos "Unknown struct [%s]." s_id.name
           in
           let annot =
-            match s.struct_annot with
+            match annot with
             | Some(annot) -> annot
             | None        ->
-            Panic.panic_no_pos "Annotations on struct [%s] are invalid." s_id
+            Panic.panic_no_pos "Annotations on struct [%s] are invalid." s_id.name
           in
           begin
             match annot with
             | SA_union        ->
                 Panic.panic_no_pos "Annotations on struct [%s] are invalid \
-                  since it is not a union." s_id
+                  since it is not a union." s_id.name
             | SA_tagged_u(_)  ->
                 Panic.panic_no_pos "Annotations on struct [%s] are invalid \
-                  since it is not a tagged union." s_id
+                  since it is not a tagged union." s_id.name
             | SA_basic(annot) ->
             if annot = default_basic_struct_annot || basic_struct_annot_defines_type annot then
               (* No annotation on struct, fall back to normal printing. *)
@@ -764,14 +770,14 @@ let gather_struct_fields id s =
             else
             let annot =
               match annot.st_typedef with
-              | None    -> {annot with st_typedef = Some((s_id,ty))}
+              | None    -> {annot with st_typedef = Some((s_id.name,ty))}
               | Some(_) ->
-              Panic.panic_no_pos "[rc::typedef] in nested struct [%s]." s_id
+              Panic.panic_no_pos "[rc::typedef] in nested struct [%s]." s_id.name
             in
-            let fields = gather_struct_fields s_id s in
-            pp "(%a)" (pp_struct_def_np structs Rec_none annot fields) s_id
+            let fields = gather_struct_fields s_id.name fields in
+            pp "(%a)" (pp_struct_def_np structs Rec_none annot fields) s_id.name
           end
-      | LStruct(_   , true ) -> assert false (* TODO *)
+      | TUnion(_, _)         -> assert false (* TODO *)
       | _                    -> pp_type_expr_rec None r ff ty
     in
     begin
@@ -799,7 +805,7 @@ let gather_struct_fields id s =
   reset_nroot_counter ();
   match annot.st_typedef with
   | None        -> pp_dots ff ()
-  | Some(_, ty) -> pp_type_expr_rec (Some(pp_dots)) r ff ty*)
+  | Some(_, ty) -> pp_type_expr_rec (Some(pp_dots)) r ff ty
 
 (*let collect_invs : Cabs.definition -> (string * state_descr) list = fun def ->
   let fn id (annot, _) acc =
@@ -814,12 +820,14 @@ let gd_name def_or_decl =
   | Gdecl (_, n, _, _) -> n.name
   | Gfundef fd -> fd.fd_name.name
   | Gcompositedecl (_, n, _) -> n.name
-  | Gcompositedef (_, n, _, _) -> n.name
+  | Gcompositedef (_, _, n, _, _) -> n.name
   | Gtypedef (n, _) -> n.name
   | Genumdef (n, _, _) -> n.name
   | Gpragma s -> "pragma" ^ s
 
-(* This needs to run at the Clight level, so it knows about temps vs. vars. *)
+let tsize_t = C.TInt (C.IULong, [])
+
+(* This might need to run at the Clight level, so it knows about temps vs. vars. *)
 let pp_spec : Coq_path.t -> import list -> inlined_code ->
       typedef list -> string list -> C.program pp =
     fun coq_path imports inlined typedefs ctxt ff ast ->
@@ -929,9 +937,12 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
         pp_instance "simplify_goal_val" "SimplifyGoal"
       end
   in
-  (*let pp_struct struct_id annot s =
+  let structs = List.fold_left (fun l g -> match g.gdesc with C.Gcompositedef (a, b, c, d, e) -> l @ [(a, b, c, d, e)] | _ -> l) [] ast
+  in
+  let pp_struct n annot s =
     (* Check if a type must be generated. *)
     if not (basic_struct_annot_defines_type annot) then () else
+    let struct_id = n.name in
     (* Gather the field annotations. *)
     let fields = gather_struct_fields struct_id s in
     let id =
@@ -940,18 +951,19 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       | Some(id,_) -> id
     in
     let pp_body r =
-      pp_struct_def_np (*ast.structs*) [] r annot fields ff struct_id;
+      pp_struct_def_np structs r annot fields ff struct_id;
     in
     pp_type id annot.st_refined_by annot.st_parameters (not annot.st_immovable)
       annot.st_unfold_order pp_body
   in
-  let pp_tagged_union id tag_type_e s =
-    if s.struct_is_union then
+  let pp_tagged_union n tag_type_e (annot, su, _, _, fields) =
+    let id = n.name in
+    if su = C.Union then
       Panic.panic_no_pos "Tagged union annotations used on [%s] should \
         rather be placed on a struct definition." id;
     (* Extract the two fields of the wrapping structure (tag and union). *)
     let (tag_field, union_field) =
-      match s(*.struct_members*) with
+      match fields with
       | [tag_field ; union_field] -> (tag_field, union_field)
       | _                         ->
       Panic.panic_no_pos "Tagged union [%s] is ill-formed: it should have \
@@ -959,60 +971,58 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     in
     (* Obtain the name of the tag field and check its type. *)
     let tag_field =
-      let (tag_field, (annot, _, layout)) = tag_field in
-      if annot <> Some(MA_none) then
+      if tag_field.fld_annot <> Some(MA_none) then
         Panic.wrn None "Annotation ignored on the tag field [%s] of \
-          the tagged union [%s]." tag_field id;
-      if layout <> LInt(ItSize_t(false)) then
+          the tagged union [%s]." tag_field.fld_name id;
+      if tag_field.fld_typ <> tsize_t then
         Panic.panic_no_pos "The tag field [%s] of tagged union [%s] does \
-          not have the expected [size_t] type." tag_field id;
+          not have the expected [size_t] type." tag_field.fld_name id;
       tag_field
     in
     (* Obtain the name of the union field and the name of the actual union. *)
     let (union_field, union_name) =
-      let (union_field, (annot, _, layout)) = union_field in
-      if annot <> Some(MA_none) then
+      if union_field.fld_annot <> Some(MA_none) then
         Panic.wrn None "Annotation ignored on the union field [%s] of \
-          the tagged union [%s]." union_field id;
-      match layout with
-      | LStruct(union_name, true) -> (union_field, union_name)
+          the tagged union [%s]." union_field.fld_name id;
+      match union_field.fld_typ with
+      | TStruct(union_name, _) -> (union_field, union_name)
       | _                         ->
       Panic.panic_no_pos "The union field [%s] of tagged union [%s] is \
-        expected to be a union." union_field id
+        expected to be a union." union_field.fld_name id
     in
     (* Find the union and extract its fields and corresponding annotations. *)
     let union_cases =
-      let union =
-        try List.assoc union_name (*ast.structs*) []
-        with Not_found -> assert false (* Unreachable thanks to Cerberus. *)
+      let (annot, su, _, _, ufields) =
+        try List.find (fun (_, _, n, _, _) -> n = union_name) structs
+        with Not_found -> assert false (* Unreachable thanks to parser. *)
       in
       (* Some sanity checks. *)
-      if not union.struct_is_union then
-        Panic.panic_no_pos "[%s] was expected to be a union." union_name;
-      assert (union.struct_annot = Some(SA_union));
+      if su <> C.Union then
+        Panic.panic_no_pos "[%s] was expected to be a union." union_name.name;
+      (*assert (union.struct_annot = Some(SA_union));*)
       (* Extracting data from the fields. *)
-      let fn (name, (annot, _, layout)) =
-        match annot with
+      let fn f =
+        match f.fld_annot with
         | Some(MA_utag(ts)) ->
             let id_struct =
-              match layout with
-              | LStruct(id, false) -> id
+              match f.fld_typ with
+              | TStruct(id, _) -> id
               | _                  ->
               Panic.panic_no_pos "Field [%s] of union [%s] is not a struct."
-                name union_name
+                f.fld_name union_name.name
             in
-            (name, ts, id_struct)
+            (f.fld_name, ts, id_struct)
         | Some(MA_none    ) ->
             Panic.panic_no_pos "Union tag annotation expected on field [%s] \
-              of union [%s]." name union_name
+              of union [%s]." f.fld_name union_name.name
         | Some(MA_field(_)) ->
             Panic.panic_no_pos "Unexpected field annotation on [%s] in the \
-              union [%s]." name union_name
+              union [%s]." f.fld_name union_name.name
         | None              ->
             Panic.panic_no_pos "Invalid annotation on field [%s] in the \
-              union [%s]." name union_name
+              union [%s]." f.fld_name union_name.name
       in
-      List.map fn union.struct_members
+      List.map fn ufields
     in
     (* Starting to do the printing. *)
     pp "\n@;(* Definition of type [%s] (tagged union). *)@;" id;
@@ -1049,9 +1059,9 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     pp "@[<v 2>Program Definition %s_tunion_info : tunion_info %a := {|@;"
       id (pp_simple_coq_expr true) tag_type_e;
     pp "ti_base_layout := struct_%s;@;" id;
-    pp "ti_tag_field_name := \"%s\";@;" tag_field;
-    pp "ti_union_field_name := \"%s\";@;" union_field;
-    pp "ti_union_layout := union_%s;@;" union_name;
+    pp "ti_tag_field_name := \"%s\";@;" tag_field.fld_name;
+    pp "ti_union_field_name := \"%s\";@;" union_field.fld_name;
+    pp "ti_union_layout := union_%s;@;" union_name.name;
     pp "ti_tag := %s_tag;@;" id;
     pp "ti_type c :=@;";
     pp "  match c with@;";
@@ -1059,11 +1069,11 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       pp "  | %s" c; List.iter (fun (x,_) -> pp " %s" x) args;
       pp " => struct struct_%s [@@{type} " name;
       begin
-        let s =
-          try List.assoc struct_id (*ast.structs*) []
-          with Not_found -> assert false (* Unreachable thanks to Cerberus. *)
+        let (_, _, _, _, s) =
+          try List.find (fun (_, _, n, _, _) -> n = struct_id) structs
+          with Not_found -> assert false (* Unreachable thanks to parser. *)
         in
-        let fields = gather_struct_fields struct_id s in
+        let fields = gather_struct_fields struct_id.name s in
         let pp_field ff (_, ty, _) = fprintf ff "%a" pp_type_expr ty in
         match fields with
         | []      -> ()
@@ -1079,15 +1089,15 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     (* Actual definition of the type. *)
     pp "Program Definition %s : rtype _ := tunion %s_tunion_info." id id
   in
-  let pp_struct_or_tagged_union (id, s) =
-    match s.struct_annot with
-    | Some(SA_basic(annot)) -> pp_struct id annot s
-    | Some(SA_tagged_u(e))  -> pp_tagged_union id e s
+  let pp_struct_or_tagged_union (annot, su, id, attrs, fields) =
+    match annot with
+    | Some(SA_basic(annot)) -> pp_struct id annot fields
+    | Some(SA_tagged_u(e))  -> pp_tagged_union id e (annot, su, id, attrs, fields)
     | Some(SA_union)        -> ()
     | None                  ->
-        Panic.panic_no_pos "Annotations on struct [%s] are invalid." id
+        Panic.panic_no_pos "Annotations on struct [%s] are invalid." id.name
   in
-  List.iter pp_struct_or_tagged_union (*ast.structs*) [];*)
+  List.iter pp_struct_or_tagged_union structs;
 
   (* Type definitions (from comments). *)
   let pp_typedef td =
@@ -1156,12 +1166,6 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   (* Printing inlined code (from comments). *)
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
-
-let var_name (id: AST.ident) =
-  try
-    "_" ^ Hashtbl.find Camlcoq.string_of_atom id
-  with Not_found ->
-    Printf.sprintf "%d" (Camlcoq.P.to_int id) ^ "%positive"
 
 let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
   (AST.ident * Ctypes.coq_type) list -> (AST.ident * Ctypes.coq_type) list -> state_descr pp =

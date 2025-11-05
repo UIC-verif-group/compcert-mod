@@ -536,7 +536,7 @@ let globdecl pp g =
         (match kind with Struct -> "struct" | Union -> "union")
         attributes attrs
         ident id
-  | Gcompositedef(kind, id, attrs, flds) ->
+  | Gcompositedef(_, kind, id, attrs, flds) ->
       fprintf pp "@[<v 2>%s%a %a {"
         (match kind with Struct -> "struct" | Union -> "union")
         attributes attrs

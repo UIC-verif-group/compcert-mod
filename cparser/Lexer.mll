@@ -721,7 +721,12 @@ and rc_annot_args = parse
            | FunctionAnnot -> loop (Parser.FUNCTION_ANNOT (Rc_annot.function_annot attrs))
            | LoopAnnot -> loop (Parser.LOOP_ANNOT (snd (Rc_annot.loop_annot attrs)))
            | InlineAnnot -> loop (Parser.INLINE_ANNOT (Rc_annot.raw_expr_annot attrs, a.Rc_annot.rc_attr_id.loc))
-           (* cook? when? *))
+           | StructAnnot -> (match Queue.peek tokens with
+                             | Pre_parser.UNION _ -> (* emit "ignored" warning? *)
+                                 loop (Parser.STRUCT_ANNOT (Rc_annot.SA_union))
+                             | _ -> loop (Parser.STRUCT_ANNOT (Rc_annot.struct_annot attrs)))
+           | MemberAnnot -> loop (Parser.MEMBER_ANNOT (Rc_annot.member_annot attrs)))
+           (* wrap in handle_invalid_annot? *)
       | Pre_parser.REGISTER loc -> loop (Parser.REGISTER loc)
       | Pre_parser.RESTRICT loc -> loop (Parser.RESTRICT loc)
       | Pre_parser.RETURN loc -> loop (Parser.RETURN loc)

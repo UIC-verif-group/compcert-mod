@@ -386,7 +386,7 @@ let rec unblock_glob env accu = function
           unblock_glob
             (Env.add_composite env id (composite_info_decl su attr))
             (g :: accu) gl
-      | Gcompositedef(su, id, attr, fl) ->
+      | Gcompositedef(_, su, id, attr, fl) ->
           unblock_glob
             (Env.add_composite env id (composite_info_def env su attr fl))
             (g :: accu) gl

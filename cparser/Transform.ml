@@ -213,9 +213,9 @@ let program
         | Gcompositedecl(su, id, attr) ->
             (Gcompositedecl(su, id, attr),
              Env.add_composite env id (composite_info_decl su attr))
-        | Gcompositedef(su, id, attr, fl) ->
+        | Gcompositedef(a, su, id, attr, fl) ->
             let (attr', fl') = composite env  g.gloc su id attr fl in
-            (Gcompositedef(su, id, attr', fl'),
+            (Gcompositedef(a, su, id, attr', fl'),
              Env.add_composite env id (composite_info_def env su attr fl))
         | Gtypedef(id, ty) ->
             (Gtypedef(id, typedef env g.gloc id ty), Env.add_typedef env id ty)

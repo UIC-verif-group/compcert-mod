@@ -123,6 +123,8 @@ Extract Constant Cabs.char_code => "int64".
 Extract Constant RcAnnot.function_annot => "Rc_annot.function_annot".
 Extract Constant RcAnnot.state_descr => "Rc_annot.state_descr".
 Extract Constant RcAnnot.raw_expr_annot => "Rc_annot.raw_expr_annot".
+Extract Constant RcAnnot.struct_annot => "Rc_annot.struct_annot".
+Extract Constant RcAnnot.member_annot => "Rc_annot.member_annot".
 
 (* Processor-specific extraction directives *)
 

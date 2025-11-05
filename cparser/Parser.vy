@@ -27,6 +27,8 @@ Require Cabs.
 %token<RcAnnot.function_annot> FUNCTION_ANNOT
 %token<RcAnnot.state_descr> LOOP_ANNOT
 %token<option RcAnnot.raw_expr_annot * Cabs.loc> INLINE_ANNOT
+%token<RcAnnot.struct_annot> STRUCT_ANNOT
+%token<RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -71,9 +73,9 @@ Require Cabs.
 %type<list Cabs.field_group (* Reverse order *)> struct_declaration_list
 %type<Cabs.field_group> struct_declaration
 %type<list Cabs.spec_elem * Cabs.loc> specifier_qualifier_list
-%type<list (option Cabs.name * option Cabs.expression) (* Reverse order *)>
+%type<list (option RcAnnot.member_annot * option Cabs.name * option Cabs.expression) (* Reverse order *)>
   struct_declarator_list
-%type<option Cabs.name * option Cabs.expression> struct_declarator
+%type<option RcAnnot.member_annot * option Cabs.name * option Cabs.expression> struct_declarator
 %type<list (Cabs.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
   enumerator_list
 %type<Cabs.string * option Cabs.expression * Cabs.loc> enumerator
@@ -466,14 +468,26 @@ type_specifier:
 struct_or_union_specifier:
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union None (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (fst str_uni) None (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union None (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
-    { (Cabs.Tstruct_union (fst str_uni) (Some (fst id)) None attrs,
+    { (Cabs.Tstruct_union None (fst str_uni) (Some (fst id)) None attrs,
+       snd str_uni) }
+(* Non-standard *)
+| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
+  LBRACE decls = struct_declaration_list RBRACE
+    { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+       snd str_uni) }
+| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list
+  LBRACE decls = struct_declaration_list RBRACE
+    { (Cabs.Tstruct_union (Some annot) (fst str_uni) None (Some (rev' decls)) attrs,
+       snd str_uni) }
+| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
+    { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 
 struct_or_union:
@@ -493,7 +507,7 @@ struct_declaration:
     { Cabs.Field_group (fst decspec) (rev' decls) (snd decspec) }
 (* Extension to C99 grammar needed to parse some GNU header files. *)
 | decspec = specifier_qualifier_list SEMICOLON
-    { Cabs.Field_group (fst decspec) [(None,None)] (snd decspec) }
+    { Cabs.Field_group (fst decspec) [(None,None,None)] (snd decspec) }
 (* C11 static assertions *)
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
@@ -517,11 +531,18 @@ struct_declarator_list:
 
 struct_declarator:
 | decl = declarator
-    { (Some decl, None) }
+    { (None, Some decl, None) }
 | decl = declarator COLON expr = constant_expression
-    { (Some decl, Some (fst expr)) }
+    { (None, Some decl, Some (fst expr)) }
 | COLON expr = constant_expression
-    { (None, Some (fst expr)) }
+    { (None, None, Some (fst expr)) }
+(* Non-standard *)
+| annot = MEMBER_ANNOT decl = declarator
+    { (Some annot, Some decl, None) }
+| annot = MEMBER_ANNOT decl = declarator COLON expr = constant_expression
+    { (Some annot, Some decl, Some (fst expr)) }
+| annot = MEMBER_ANNOT COLON expr = constant_expression
+    { (Some annot, None, Some (fst expr)) }
 
 (* 6.7.2.2 *)
 enum_specifier:

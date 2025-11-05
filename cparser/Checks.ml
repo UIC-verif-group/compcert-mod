@@ -106,7 +106,7 @@ let traverse_program
         | Gcompositedecl (su,id,attr) ->
           compositedecl env g.gloc su id attr;
           add_composite env id (composite_info_decl su attr)
-        | Gcompositedef (su,id,attr,fl) ->
+        | Gcompositedef (_,su,id,attr,fl) ->
           compositedef env g.gloc su id attr fl;
           add_composite env id (composite_info_def env su attr fl)
         | Gtypedef (id,ty) ->

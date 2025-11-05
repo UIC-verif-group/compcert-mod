@@ -827,22 +827,22 @@ let rec elab_specifier ?(only = false) loc env specifier =
         let (id', info) = wrap Env.lookup_typedef loc env id in
         simple (TNamed(id', []))
 
-    | [Cabs.Tstruct_union(STRUCT, id, optmembers, a)] ->
+    | [Cabs.Tstruct_union(annot, STRUCT, id, optmembers, a)] ->
         let a' =
           add_attributes (get_definition_attrs optmembers)
                          (elab_attributes env a) in
         let (id', env') =
-          elab_struct_or_union only Struct loc id optmembers a' env in
+          elab_struct_or_union only annot Struct loc id optmembers a' env in
         let ty =  TStruct(id', !attr) in
         restrict_check ty;
         (!sto, !inline, !noreturn, !typedef, ty, env')
 
-    | [Cabs.Tstruct_union(UNION, id, optmembers, a)] ->
+    | [Cabs.Tstruct_union(annot, UNION, id, optmembers, a)] ->
         let a' =
           add_attributes (get_definition_attrs optmembers)
                          (elab_attributes env a) in
         let (id', env') =
-          elab_struct_or_union only Union loc id optmembers a' env in
+          elab_struct_or_union only annot Union loc id optmembers a' env in
         let ty =  TUnion(id', !attr) in
         restrict_check ty;
         (!sto, !inline, !noreturn, !typedef, ty, env')
@@ -1046,13 +1046,13 @@ and elab_field_group env = function
 | Field_group (spec, fieldlist, loc) ->
 
   let fieldlist = List.map
-    (function (None, x) -> (Name ("", JUSTBASE, [], loc), x)
-            | (Some n, x) -> (n, x))
+    (function ((a, None), x) -> (a, Name ("", JUSTBASE, [], loc), x)
+            | ((a, Some n), x) -> (a, n, x))
     fieldlist
   in
 
   let ((names, env'), sto) =
-    elab_name_group loc env  (spec, List.map fst fieldlist) in
+    elab_name_group loc env  (spec, List.map (fun (_, n, _) -> n) fieldlist) in
 
   if sto <> Storage_default then
     (* This should actually never be triggered, catched by pre-parser *)
@@ -1061,7 +1061,7 @@ and elab_field_group env = function
       (* This should actually never be triggered, empty structs are captured earlier *)
       warning loc Missing_declarations "declaration does not declare anything";
 
-  let elab_bitfield env (Name (_, _, _, loc), optbitsize) (id, ty) =
+  let elab_bitfield env (a, Name (_, _, _, loc), optbitsize) (id, ty) =
     let optbitsize',env' =
       match optbitsize with
       | None -> None,env
@@ -1096,7 +1096,7 @@ and elab_field_group env = function
       None, env'
     end else
       Some { fld_name = id; fld_typ = ty; fld_bitfield = optbitsize';
-             fld_anonymous = id = "" && anon_composite},
+             fld_anonymous = id = "" && anon_composite; fld_annot = a },
       env'
   in
   (mmap2_filter elab_bitfield env' fieldlist names)
@@ -1172,7 +1172,7 @@ and elab_struct_or_union_info kind loc env members attrs =
   (* Final result *)
   (composite_info_def env' kind attrs m, env')
 
-and elab_struct_or_union only kind loc tag optmembers attrs env =
+and elab_struct_or_union only annot kind loc tag optmembers attrs env =
   let warn_attrs () =
     if attrs <> [] then
       warning loc Ignored_attributes "attribute declaration must precede definition" in
@@ -1203,7 +1203,7 @@ and elab_struct_or_union only kind loc tag optmembers attrs env =
       (* finishing the definition of an incomplete struct or union *)
       let (ci', env') = elab_struct_or_union_info kind loc env members attrs in
       (* Emit a global definition for it *)
-      emit_elab env' loc (Gcompositedef(kind, tag', attrs, ci'.Env.ci_members));
+      emit_elab env' loc (Gcompositedef(annot, kind, tag', attrs, ci'.Env.ci_members));
       (* Replace infos but keep same ident *)
       (tag', Env.add_composite env' tag' ci')
   | Some(tag', {Env.ci_sizeof = Some _}), Some _
@@ -1230,7 +1230,7 @@ and elab_struct_or_union only kind loc tag optmembers attrs env =
       let (ci2, env'') =
         elab_struct_or_union_info kind loc env' members attrs in
       (* emit a definition *)
-      emit_elab env'' loc (Gcompositedef(kind, tag', attrs, ci2.Env.ci_members));
+      emit_elab env'' loc (Gcompositedef(annot, kind, tag', attrs, ci2.Env.ci_members));
       (* Replace infos but keep same ident *)
       (tag', Env.add_composite env'' tag' ci2)
 

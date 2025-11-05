@@ -27,5 +27,7 @@ type rc_annot_type =
   | FunctionAnnot
   | LoopAnnot
   | InlineAnnot
+  | StructAnnot
+  | MemberAnnot
 
 let set_annot_type:(int -> rc_annot_type -> unit) ref = ref (fun _ _ -> assert false)
