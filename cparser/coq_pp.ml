@@ -825,7 +825,11 @@ let gd_name def_or_decl =
   | Genumdef (n, _, _) -> n.name
   | Gpragma s -> "pragma" ^ s
 
-let tsize_t = C.TInt (C.IULong, [])
+let pp_typ : C.typ pp = fun ff t -> pp_layout false ff (C2C.convertTyp Env.empty t)
+
+let is_size_t t = match t with
+  | C.TNamed (s, []) -> s.name = "size_t"
+  | _ -> false
 
 (* This might need to run at the Clight level, so it knows about temps vs. vars. *)
 let pp_spec : Coq_path.t -> import list -> inlined_code ->
@@ -976,9 +980,9 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       if tag_field.fld_annot <> Some(MA_none) then
         Panic.wrn None "Annotation ignored on the tag field [%s] of \
           the tagged union [%s]." tag_field.fld_name id;
-      if tag_field.fld_typ <> tsize_t then
-        Panic.panic_no_pos "The tag field [%s] of tagged union [%s] does \
-          not have the expected [size_t] type." tag_field.fld_name id;
+      if not (is_size_t tag_field.fld_typ) then
+        Panic.panic_no_pos "The tag field [%s] of tagged union [%s] has type \
+          [%a] instead of the expected [size_t] type." tag_field.fld_name id pp_typ tag_field.fld_typ;
       tag_field
     in
     (* Obtain the name of the union field and the name of the actual union. *)
@@ -987,10 +991,10 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
         Panic.wrn None "Annotation ignored on the union field [%s] of \
           the tagged union [%s]." union_field.fld_name id;
       match union_field.fld_typ with
-      | TStruct(union_name, _) -> (union_field, union_name)
+      | TUnion(union_name, _) -> (union_field, union_name)
       | _                         ->
       Panic.panic_no_pos "The union field [%s] of tagged union [%s] is \
-        expected to be a union." union_field.fld_name id
+        expected to be a union, not [%a]." union_field.fld_name id pp_typ union_field.fld_typ
     in
     (* Find the union and extract its fields and corresponding annotations. *)
     let union_cases =
