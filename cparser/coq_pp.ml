@@ -690,7 +690,7 @@ let pp_constr = pp_constr_rec None Rec_none true
 
 let pp_constrs : constr list pp = fun ff cs ->
   match cs with
-  | []      -> pp_str ff "True"
+  | []      -> pp_str ff "emp"
   | c :: cs -> pp_constr ff c; List.iter (fprintf ff " ∗ %a" pp_constr) cs
 
 let gather_struct_fields id s =
@@ -1242,7 +1242,7 @@ let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
   in
   begin
     match (all_vars, sd.sd_constrs) with
-    | ([], []) -> pp "True"
+    | ([], []) -> pp "emp"
     | (vs , cs) ->
         List.iter (pp "%a" pp_var) vs;
         List.iter (pp "%a@;%a" pp_sep () pp_constr) cs
