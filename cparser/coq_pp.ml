@@ -860,7 +860,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   (* Printing generation data in a comment. *)
   pp "@;(* Generated from [%s]. *)" "";
 
-  pp "#[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.@;";
+  pp "@;#[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.@;";
 
   (* Printing inlined code (from comments). *)
   pp_inlined true (Some "prelude") inlined.ic_prelude;
@@ -1096,7 +1096,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     | Some(SA_basic(annot)) -> pp_struct id annot fields
     | Some(SA_tagged_u(e))  -> pp_tagged_union id e (annot, su, id, attrs, fields)
     | Some(SA_union)        -> ()
-    | None                  ->
+    | None                  -> if su = C.Union then () else
         Panic.panic_no_pos "Annotations on struct [%s] are invalid." id.name
   in
   List.iter pp_struct_or_tagged_union structs;
@@ -1115,6 +1115,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   let pp_spec def_or_decl =
     let id = gd_name def_or_decl
     in
+    match def_or_decl.gdesc with Gfundef _ | Gdecl _ -> (
     let annot =
       match def_or_decl.gdesc with
       | Gfundef fd -> (match fd.fd_annot with Some annot -> annot
@@ -1143,9 +1144,9 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
       (pp_as_tuple pp_str) param_names pp_prod param_types
       pp_args annot.fa_args pp_constrs annot.fa_requires (pp_as_tuple pp_str)
       exist_names pp_prod exist_types pp_type_expr
-      annot.fa_returns pp_constrs annot.fa_ensures
+      annot.fa_returns pp_constrs annot.fa_ensures) | _ -> ()
   in
-  List.iter pp_spec ast(*.functions*)(*prog_defs?*);
+  List.iter pp_spec ast;
 
   (* Closing the section. *)
   pp "@]@;End spec.";

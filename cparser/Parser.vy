@@ -73,9 +73,9 @@ Require Cabs.
 %type<list Cabs.field_group (* Reverse order *)> struct_declaration_list
 %type<Cabs.field_group> struct_declaration
 %type<list Cabs.spec_elem * Cabs.loc> specifier_qualifier_list
-%type<list (option RcAnnot.member_annot * option Cabs.name * option Cabs.expression) (* Reverse order *)>
+%type<(option Cabs.name * option Cabs.expression) * list (option RcAnnot.member_annot * (option Cabs.name * option Cabs.expression)) (* Reverse order *)>
   struct_declarator_list
-%type<option RcAnnot.member_annot * option Cabs.name * option Cabs.expression> struct_declarator
+%type<option Cabs.name * option Cabs.expression> struct_declarator
 %type<list (Cabs.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
   enumerator_list
 %type<Cabs.string * option Cabs.expression * Cabs.loc> enumerator
@@ -478,15 +478,15 @@ struct_or_union_specifier:
     { (Cabs.Tstruct_union None (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 (* Non-standard *)
-| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
     { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
-| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT
   LBRACE decls = struct_declaration_list RBRACE
     { (Cabs.Tstruct_union (Some annot) (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
-| annot = STRUCT_ANNOT str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
     { (Cabs.Tstruct_union (Some annot) (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 
@@ -504,14 +504,17 @@ struct_declaration_list:
 
 struct_declaration:
 | decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
-    { Cabs.Field_group (fst decspec) (rev' decls) (snd decspec) }
+    { Cabs.Field_group (fst decspec) ((None, fst decls) :: rev' (snd decls)) (snd decspec) }
 (* Extension to C99 grammar needed to parse some GNU header files. *)
 | decspec = specifier_qualifier_list SEMICOLON
-    { Cabs.Field_group (fst decspec) [(None,None,None)] (snd decspec) }
+    { Cabs.Field_group (fst decspec) [(None,(None,None))] (snd decspec) }
 (* C11 static assertions *)
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.Field_group_static_assert e loc_e s loc_s loc }
+(* Non-standard *)
+| annot = MEMBER_ANNOT decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
+    { Cabs.Field_group (fst decspec) ((Some annot, fst decls) :: rev' (snd decls)) (snd decspec) }
 
 specifier_qualifier_list:
 | typ = type_specifier rest = specifier_qualifier_list
@@ -525,24 +528,20 @@ specifier_qualifier_list:
 
 struct_declarator_list:
 | decl = struct_declarator
-    { [decl] }
+    { (decl, []) }
 | declq = struct_declarator_list COMMA declt = struct_declarator
-    { declt::declq }
+    { (fst declq, (None, declt)::snd declq) }
+(* Non-standard *)
+| declq = struct_declarator_list COMMA annot = MEMBER_ANNOT declt = struct_declarator
+    { (fst declq, (Some annot, declt)::snd declq) }
 
 struct_declarator:
 | decl = declarator
-    { (None, Some decl, None) }
+    { (Some decl, None) }
 | decl = declarator COLON expr = constant_expression
-    { (None, Some decl, Some (fst expr)) }
+    { (Some decl, Some (fst expr)) }
 | COLON expr = constant_expression
-    { (None, None, Some (fst expr)) }
-(* Non-standard *)
-| annot = MEMBER_ANNOT decl = declarator
-    { (Some annot, Some decl, None) }
-| annot = MEMBER_ANNOT decl = declarator COLON expr = constant_expression
-    { (Some annot, Some decl, Some (fst expr)) }
-| annot = MEMBER_ANNOT COLON expr = constant_expression
-    { (Some annot, None, Some (fst expr)) }
+    { (None, Some (fst expr)) }
 
 (* 6.7.2.2 *)
 enum_specifier:

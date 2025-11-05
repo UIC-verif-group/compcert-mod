@@ -525,19 +525,17 @@ struct_or_union_specifier:
 | struct_or_union attribute_specifier_list other_identifier? LBRACE struct_declaration_list RBRACE
 | struct_or_union attribute_specifier_list other_identifier
     {}
+| struct_or_union attribute_specifier_list idx = rc_attributes other_identifier? LBRACE struct_declaration_list RBRACE
+| struct_or_union attribute_specifier_list idx = rc_attributes other_identifier
+    { !set_annot_type idx StructAnnot }
 
 struct_or_union:
 | STRUCT
 | UNION
     {}
-| idx = rc_attributes STRUCT
-| idx = rc_attributes UNION
-    { !set_annot_type idx StructAnnot }
 
 struct_declaration_list:
 | (* empty *)
-| struct_declaration_list struct_declaration
-    {}
 | struct_declaration_list struct_declaration
     {}
 
@@ -545,6 +543,8 @@ struct_declaration:
 | specifier_qualifier_list(struct_declaration) struct_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
+| idx = rc_attributes specifier_qualifier_list(struct_declaration) struct_declarator_list? SEMICOLON
+    { !set_annot_type idx MemberAnnot }
 
 (* As in the standard, except it also encodes the constraint described
    in the comment above [declaration_specifiers]. *)
@@ -563,7 +563,6 @@ struct_declarator_list:
 | struct_declarator
 | struct_declarator_list COMMA struct_declarator
     {}
-| idx = rc_attributes struct_declarator
 | struct_declarator_list COMMA idx = rc_attributes struct_declarator
     { !set_annot_type idx MemberAnnot }
 

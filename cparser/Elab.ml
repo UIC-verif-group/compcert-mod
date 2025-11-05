@@ -1046,8 +1046,8 @@ and elab_field_group env = function
 | Field_group (spec, fieldlist, loc) ->
 
   let fieldlist = List.map
-    (function ((a, None), x) -> (a, Name ("", JUSTBASE, [], loc), x)
-            | ((a, Some n), x) -> (a, n, x))
+    (function (a, (None, x)) -> (a, Name ("", JUSTBASE, [], loc), x)
+            | (a, (Some n, x)) -> (a, n, x))
     fieldlist
   in
 
