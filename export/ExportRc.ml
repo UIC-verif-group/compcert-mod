@@ -277,14 +277,14 @@ let run : config -> string -> unit = fun cfg c_file ->
   let c_file_rel = Filename.relative_path c_file.root_dir c_file.file_path in
   let ifile = Driveraux.tmp_file ".i" in
   Frontend.init ();
-  Frontend.preprocess c_file_rel ifile;
   (* Parse the comment annotations. *)
   let open Comment_annot in
   let ca =
-    let lines = (*Cerb_wrapper.cpp_lines cpp_config c_file.file_path*) [] (*load from ifile*) in
+    let lines = read_file c_file.file_path in
     parse_annots lines
   in
   let ctxt = List.map (fun s -> "Context " ^ s) ca.ca_context in
+  Frontend.preprocess c_file_rel ifile;
   (* from Frontend *)
   Debug.init_compile_unit c_file_rel;
   Sections.initialize();

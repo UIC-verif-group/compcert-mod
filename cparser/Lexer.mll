@@ -401,6 +401,10 @@ rule initial = parse
                                     let a = rc_annot_args lexbuf in
                                     RC_ATTR (i, {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
                                                  Rc_annot.rc_attr_args = a }) }
+  | "[[rc::" ([^ '(' ']' '\n']* as n) "]]"
+                                  { let i = !annot_index in annot_index := i + 1;
+                                    RC_ATTR (i, {Rc_annot.rc_attr_id = {elt = n; loc = currentLoc lexbuf};
+                                                 Rc_annot.rc_attr_args = [] }) }
   | "..."                         { ELLIPSIS(currentLoc lexbuf) }
   | "+="                          { ADD_ASSIGN(currentLoc lexbuf) }
   | "-="                          { SUB_ASSIGN(currentLoc lexbuf) }
