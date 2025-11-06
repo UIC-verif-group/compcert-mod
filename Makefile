@@ -230,7 +230,7 @@ ifeq ($(HAS_RUNTIME_LIB),true)
 	$(MAKE) runtime
 endif
 ifeq ($(CLIGHTGEN),true)
-	$(MAKE) clightgen rcvstgen
+	$(MAKE) clightgen refinedcc
 endif
 ifeq ($(INSTALL_COQDEV),true)
 	$(MAKE) compcert.config
@@ -371,7 +371,7 @@ install:
 	$(MAKE) -C runtime install
 ifeq ($(CLIGHTGEN),true)
 	install -m 0755 ./clightgen $(DESTDIR)$(BINDIR)
-  install -m 0755 ./rcvstgen $(DESTDIR)$(BINDIR)
+	install -m 0755 ./refinedcc $(DESTDIR)$(BINDIR)
 endif
 ifeq ($(INSTALL_COQDEV),true)
 	install -d $(DESTDIR)$(COQDEVDIR)

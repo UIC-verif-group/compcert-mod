@@ -41,6 +41,9 @@ include Makefile.menhir
 cparser/pre_parser_messages.ml:
 	$(MAKE) -C cparser correct
 
+cparser/rc_annot.ml: refinedc/rc_annot.ml
+	pa_ocaml $< > $@
+
 # Directories containing plain Caml code
 
 DIRS=extraction \
@@ -78,9 +81,11 @@ endif
 
 COMPFLAGS+=-g -strict-sequence -safe-string \
   $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix \
-  -I ~/.opam/4.14.2/lib/earley/core -I ~/.opam/4.14.2/lib/ubase -I ~/.opam/4.14.2/lib/cmdliner \
-  -I ~/.opam/4.14.2/lib/toml -I ~/.opam/4.14.2/lib/ISO8601 \
+  -I $(OPAM_SWITCH_PREFIX)/lib/earley/core -I $(OPAM_SWITCH_PREFIX)/lib/ubase -I $(OPAM_SWITCH_PREFIX)/lib/cmdliner \
+  -I $(OPAM_SWITCH_PREFIX)/lib/toml -I $(OPAM_SWITCH_PREFIX)/lib/ISO8601 \
   $(WARNINGS) $(WARN_ERRORS)
+
+C_COMPFLAGS=-I $(OPAM_SWITCH_PREFIX)/lib/ocaml/
 
 # Using .opt compilers if available
 
@@ -106,7 +111,11 @@ LIBS=str.cmxa unix.cmxa earley_core.cmxa ubase.cmxa cmdliner.cmxa ISO8601.cmxa t
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte rcvstgen rcvstgen.byte
-GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml cparser/rc_annot.ml
+GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml cparser/rc_annot.ml cparser/stubs.o
+
+cparser/stubs.o: cparser/stubs.c
+	@echo "GCC  $(C_COMPFLAGS) -c -o $@ $<"
+	@gcc $(C_COMPFLAGS) -c -o $@ $<
 
 # Beginning of part that assumes .depend.extr already exists
 
@@ -128,11 +137,7 @@ ccomp.byte: $(CCOMP_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-cparser/stubs.o: cparser/stubs.c
-	@echo "GCC   $<"
-	@gcc -c -o $@ $<
-
-CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx) cparser/stubs.o
+CLIGHTGEN_OBJS:=$(shell $(MODORDER) export/ExportDriver.cmx)
 
 ifeq ($(OCAML_NATIVE_COMP),true)
 clightgen: $(CLIGHTGEN_OBJS)
@@ -147,9 +152,6 @@ endif
 clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
-
-cparser/rc_annot.ml: refinedc/rc_annot.ml
-	pa_ocaml $< > $@
 
 RC_OBJS:=$(shell $(MODORDER) export/ExportRc.cmx) cparser/stubs.o
 
@@ -189,6 +191,7 @@ endif
 clean:
 	rm -f $(EXECUTABLES)
 	rm -f $(GENERATED)
+	rm -f refinedcc
 	for d in $(DIRS); do rm -f $$d/*.cm[iotx] $$d/*cmti $$d/*.o; done
 	$(MAKE) -C cparser clean
 
