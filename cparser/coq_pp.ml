@@ -832,9 +832,9 @@ let is_size_t t = match t with
   | _ -> false
 
 (* This might need to run at the Clight level, so it knows about temps vs. vars. *)
-let pp_spec : Coq_path.t -> import list -> inlined_code ->
+let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
       typedef list -> string list -> C.program pp =
-    fun coq_path imports inlined typedefs ctxt ff ast ->
+    fun source coq_path imports inlined typedefs ctxt ff ast ->
 
   (* Formatting utilities. *)
   let pp fmt = Format.fprintf ff fmt in
@@ -862,7 +862,7 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
   pp "Set Default Proof Using \"Type\".\n";
 
   (* Printing generation data in a comment. *)
-  pp "@;(* Generated from [%s]. *)" "";
+  pp "@;(* Generated from [%s]. *)" source;
 
   pp "@;#[export] Instance CompSpecs : compspecs. make_compspecs prog. Defined.@;";
 
@@ -1065,8 +1065,8 @@ let pp_spec : Coq_path.t -> import list -> inlined_code ->
     pp "@[<v 2>Program Definition %s_tunion_info : tunion_info %a := {|@;"
       id (pp_simple_coq_expr true) tag_type_e;
     pp "ti_base_layout := _%s;@;" id;
-    pp "ti_tag_field_name := \"%s\";@;" tag_field.fld_name;
-    pp "ti_union_field_name := \"%s\";@;" union_field.fld_name;
+    pp "ti_tag_field_name := _%s;@;" tag_field.fld_name;
+    pp "ti_union_field_name := _%s;@;" union_field.fld_name;
     pp "ti_union_layout := _%s;@;" union_name.name;
     pp "ti_tag := %s_tag;@;" id;
     pp "ti_type c :=@;";
@@ -1255,9 +1255,9 @@ let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
         List.iter (pp "%a@;%a" pp_sep () pp_constr) cs
   end
 
-let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
+let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
     -> proof_kind -> C.program pp =
-    fun coq_path def imports ctxt proof_kind ff ast ->
+    fun source coq_path def imports ctxt proof_kind ff ast ->
   (* Formatting utilities. *)
   let pp fmt = Format.fprintf ff fmt in
 
@@ -1286,7 +1286,7 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
   pp "Set Default Proof Using \"Type\".@;@;";
 
   (* Printing generation data in a comment. *)
-  pp "(* Generated from [%s]. *)@;" (*ast.source_file*) "";
+  pp "(* Generated from [%s]. *)@;" source;
 
   (* Opening the section. *)
   let (func_name, func_args, func_vars) = (def.fd_name.name, def.fd_params, def.fd_locals)
@@ -1437,18 +1437,18 @@ let pp_proof : Coq_path.t -> C.fundef -> import list -> string list
 
 type mode =
   (*| Code of string * import list   handled by Export *)
-  | Spec of Coq_path.t * import list * inlined_code * typedef list * string list
-  | Fprf of Coq_path.t * fundef * import list * string list * proof_kind
+  | Spec of string * Coq_path.t * import list * inlined_code * typedef list * string list
+  | Fprf of string * Coq_path.t * fundef * import list * string list * proof_kind
 
 let write : mode -> string -> C.program -> unit = fun mode fname ast ->
   let pp =
     match mode with
 (*    | Code(root_dir,imports)                 ->
         pp_code root_dir imports *)
-    | Spec(coq_path,imports,inlined,tydefs,ctxt) ->
-        pp_spec coq_path imports inlined tydefs ctxt
-    | Fprf(coq_path,def,imports,ctxt,kind)       ->
-        pp_proof coq_path def imports ctxt kind
+    | Spec(source,coq_path,imports,inlined,tydefs,ctxt) ->
+        pp_spec source coq_path imports inlined tydefs ctxt
+    | Fprf(source,coq_path,def,imports,ctxt,kind)       ->
+        pp_proof source coq_path def imports ctxt kind
   in
   (* We write to a buffer. *)
   let buffer = Buffer.create 4096 in

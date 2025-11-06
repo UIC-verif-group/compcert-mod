@@ -582,10 +582,10 @@ and singleline_comment = parse
 and rc_annot_args = parse
   | ")]]"  { [] }
   | "\"" ([^ '"']* as a) "\")]]" { [{ Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
-                                      Rc_annot.rc_attr_arg_pieces = [] }] }
+                                      Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] }] }
   | "\"" ([^ '"']* as a) "\"," whitespace_char *
                                  { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
-                                     Rc_annot.rc_attr_arg_pieces = [] } :: rc_annot_args lexbuf }
+                                     Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] } :: rc_annot_args lexbuf }
   | _ as c
       { fatal_error lexbuf "invalid symbol %C" c }
 

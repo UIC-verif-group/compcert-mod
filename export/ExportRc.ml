@@ -297,7 +297,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   let open Coq_pp in
   compile_c_file c_file_rel ifile code_file;
   (* Generate the spec file. *)
-  let mode = Spec(path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
+  let mode = Spec(c_file_rel, path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
   write mode spec_file coq_ast;
   (* Compute the list of proof files to generate. *)
   let to_generate =
@@ -329,7 +329,7 @@ let run : config -> string -> unit = fun cfg c_file ->
     let open C in
     match def_or_decl.gdesc with
     | Gfundef(def) -> if is_inlined def then () else
-    let mode = Fprf(path, def, proof_imports, ctxt, proof_kind def) in
+    let mode = Fprf(c_file_rel, path, def, proof_imports, ctxt, proof_kind def) in
     write mode (proof_of_file (gd_name def_or_decl)) coq_ast
     | _ -> ()
   in
