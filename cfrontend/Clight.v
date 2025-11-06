@@ -102,14 +102,14 @@ Inductive statement : Type :=
   | Sbuiltin: option ident -> external_function -> list type -> list expr -> statement (**r builtin invocation *)
   | Ssequence : statement -> statement -> statement  (**r sequence *)
   | Sifthenelse : expr  -> statement -> statement -> statement (**r conditional *)
-  | Sloop: option state_descr -> statement -> statement -> statement (**r infinite loop *)
+  | Sloop: option Z -> statement -> statement -> statement (**r infinite loop *)
   | Sbreak : statement                      (**r [break] statement *)
   | Scontinue : statement                   (**r [continue] statement *)
   | Sreturn : option expr -> statement      (**r [return] statement *)
   | Sswitch : expr -> labeled_statements -> statement  (**r [switch] statement *)
   | Slabel : label -> statement -> statement
   | Sgoto : label -> statement
-  | Sannot : option raw_expr_annot -> statement
+  | Sannot : expr_annot -> statement
 
 with labeled_statements : Type :=            (**r cases of a [switch] *)
   | LSnil: labeled_statements

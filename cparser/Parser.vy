@@ -22,11 +22,11 @@ Require Cabs.
 
 %}
 
-%token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
-%token<Cabs.string * Cabs.loc> PRAGMA
+%token<RcAnnot.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
+%token<RcAnnot.string * Cabs.loc> PRAGMA
 %token<RcAnnot.function_annot> FUNCTION_ANNOT
-%token<RcAnnot.state_descr> LOOP_ANNOT
-%token<option RcAnnot.raw_expr_annot * Cabs.loc> INLINE_ANNOT
+%token<Z * RcAnnot.state_descr> LOOP_ANNOT
+%token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
 %token<option RcAnnot.struct_annot> STRUCT_ANNOT
 %token<RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
@@ -76,10 +76,10 @@ Require Cabs.
 %type<(option Cabs.name * option Cabs.expression) * list (option RcAnnot.member_annot * (option Cabs.name * option Cabs.expression)) (* Reverse order *)>
   struct_declarator_list
 %type<option Cabs.name * option Cabs.expression> struct_declarator
-%type<list (Cabs.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
+%type<list (RcAnnot.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
   enumerator_list
-%type<Cabs.string * option Cabs.expression * Cabs.loc> enumerator
-%type<Cabs.string * Cabs.loc> enumeration_constant
+%type<RcAnnot.string * option Cabs.expression * Cabs.loc> enumerator
+%type<RcAnnot.string * Cabs.loc> enumeration_constant
 %type<Cabs.cvspec * Cabs.loc> type_qualifier type_qualifier_noattr
 %type<Cabs.funspec * Cabs.loc> function_specifier
 %type<Cabs.name> declarator declarator_noattrend direct_declarator
@@ -111,9 +111,9 @@ Require Cabs.
 %type<Cabs.gcc_attribute> gcc_attribute
 %type<list Cabs.gcc_attribute> gcc_attribute_list
 %type<Cabs.gcc_attribute_word> gcc_attribute_word
-%type<list Cabs.string (* Reverse order *)> identifier_list
+%type<list RcAnnot.string (* Reverse order *)> identifier_list
 %type<list Cabs.asm_flag> asm_flags
-%type<option Cabs.string> asm_op_name
+%type<option RcAnnot.string> asm_op_name
 %type<Cabs.asm_operand> asm_operand
 %type<list Cabs.asm_operand> asm_operands asm_operands_ne
 %type<list Cabs.asm_operand * list Cabs.asm_operand * list Cabs.asm_flag> asm_arguments
@@ -468,14 +468,14 @@ type_specifier:
 struct_or_union_specifier:
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) None (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
-    { (Cabs.Tstruct_union (Some RcAnnot.default_struct_annot) (fst str_uni) (Some (fst id)) None attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 (* Non-standard *)
 | str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
@@ -849,7 +849,10 @@ statement_dangerous:
 | stmt = asm_statement
     { stmt }
 | annot = INLINE_ANNOT
-    { Cabs.ANNOT (fst annot) (snd annot) }
+    { match annot with
+      | (Some a, loc) => Cabs.ANNOT a loc
+      | (None, loc) => Cabs.NOP loc
+      end }
 
 statement_safe:
 | stmt = labeled_statement(statement_safe)
@@ -862,7 +865,10 @@ statement_safe:
 | stmt = asm_statement
     { stmt }
 | annot = INLINE_ANNOT
-    { Cabs.ANNOT (fst annot) (snd annot) }
+    { match annot with
+      | (Some a, loc) => Cabs.ANNOT a loc
+      | (None, loc) => Cabs.NOP loc
+      end }
 
 (* 6.8.1 *)
 labeled_statement(last_statement):

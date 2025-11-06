@@ -17,8 +17,6 @@
 Require Import BinPos.
 Require Import RcAnnot.
 
-(* OCaml's string type. *)
-Parameter string : Type.
 (* OCaml's int64 type, used to represent individual characters in literals. *)
 Parameter char_code : Type.
 (* Context information. *)
@@ -41,6 +39,9 @@ Inductive encoding :=
 
 Inductive structOrUnion :=
   | STRUCT | UNION.
+
+Definition default_su_annot (su : structOrUnion) :=
+  match su with STRUCT => default_struct_annot | UNION => default_union_annot end.
 
 Inductive typeSpecifier := (* Merge all specifiers into one type *)
   | Tvoid                  (* Type specifier ISO 6.7.2 *)
@@ -225,9 +226,9 @@ with statement :=
  | COMPUTATION : expression -> loc -> statement
  | BLOCK : list statement -> loc -> statement
  | If : expression -> statement -> option statement -> loc -> statement
- | WHILE : option state_descr -> expression -> statement -> loc -> statement
- | DOWHILE : option state_descr -> expression -> statement -> loc -> statement
- | FOR : option state_descr -> option for_clause -> option expression -> option expression -> statement -> loc -> statement
+ | WHILE : option (Z * state_descr) -> expression -> statement -> loc -> statement
+ | DOWHILE : option (Z * state_descr) -> expression -> statement -> loc -> statement
+ | FOR : option (Z * state_descr) -> option for_clause -> option expression -> option expression -> statement -> loc -> statement
  | BREAK : loc -> statement
  | CONTINUE : loc -> statement
  | RETURN : option expression -> loc -> statement
@@ -238,7 +239,7 @@ with statement :=
  | GOTO : string -> loc -> statement
  | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
- | ANNOT : option raw_expr_annot -> loc -> statement
+ | ANNOT : (Z * raw_expr_annot) -> loc -> statement
 
 with for_clause :=
  | FC_EXP : expression -> for_clause

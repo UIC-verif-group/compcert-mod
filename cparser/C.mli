@@ -207,9 +207,9 @@ and stmt_desc =
   | Sdo of exp
   | Sseq of stmt * stmt
   | Sif of exp * stmt * stmt
-  | Swhile of Rc_annot.state_descr option * exp * stmt
-  | Sdowhile of Rc_annot.state_descr option * stmt * exp
-  | Sfor of Rc_annot.state_descr option * stmt * exp * stmt * stmt
+  | Swhile of (Camlcoq.Z.t * Rc_annot.state_descr) option * exp * stmt
+  | Sdowhile of (Camlcoq.Z.t * Rc_annot.state_descr) option * stmt * exp
+  | Sfor of (Camlcoq.Z.t * Rc_annot.state_descr) option * stmt * exp * stmt * stmt
   | Sbreak
   | Scontinue
   | Sswitch of exp * stmt
@@ -219,7 +219,7 @@ and stmt_desc =
   | Sblock of stmt list
   | Sdecl of decl
   | Sasm of attributes * string * asm_operand list * asm_operand list * string list
-  | Sannot of Rc_annot.raw_expr_annot option
+  | Sannot of (Camlcoq.Z.t * Rc_annot.raw_expr_annot)
 
 and slabel =
   | Slabel of string
@@ -253,11 +253,15 @@ type enumerator = ident * int64 * exp option
 
 (** Global declarations *)
 
+type gdecl_annot =
+  | Prototype_annot of Rc_annot.function_annot
+  | Global_annot of Rc_annot.global_annot
+
 type globdecl =
   { gdesc: globdecl_desc; gloc: location }
 
 and globdecl_desc =
-  | Gdecl of decl           (* variable declaration, function prototype *)
+  | Gdecl of decl       (* variable declaration, function prototype *)
   | Gfundef of fundef                   (* function definition *)
   | Gcompositedecl of struct_or_union * ident * attributes
                                         (* struct/union declaration *)

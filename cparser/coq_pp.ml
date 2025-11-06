@@ -807,13 +807,33 @@ let rec pp_struct_def_np structs r annot fields ff id =
   | None        -> pp_dots ff ()
   | Some(_, ty) -> pp_type_expr_rec (Some(pp_dots)) r ff ty
 
-(*let collect_invs : Cabs.definition -> (string * state_descr) list = fun def ->
-  let fn id (annot, _) acc =
-    match annot with
-    | BA_none     -> acc
-    | BA_loop(sd) -> (id, sd) :: acc
-  in
-  SMap.fold fn def.func_blocks []*)
+let rec collect_invs_stmt : stmt -> (bool * (Camlcoq.Z.t * state_descr)) list -> (bool * (Camlcoq.Z.t * state_descr)) list = fun s acc ->
+  match s.sdesc with
+  | Sskip -> acc
+  | Sdo e -> acc
+  | Sseq (s1, s2) -> collect_invs_stmt s1 (collect_invs_stmt s2 acc)
+  | Sif (e, s1, s2) -> collect_invs_stmt s1 (collect_invs_stmt s2 acc)
+  | Swhile (Some a, e, s) -> collect_invs_stmt s ((true, a) :: acc)
+  | Swhile (None, e, s) -> collect_invs_stmt s acc
+  | Sdowhile (Some a, s, e) -> collect_invs_stmt s ((true, a) :: acc)
+  | Sdowhile (None, s, e) -> collect_invs_stmt s acc
+  | Sfor (Some a, s, e, s1, s2) -> collect_invs_stmt s (collect_invs_stmt s1 (collect_invs_stmt s2 ((true, a) :: acc)))
+  | Sfor (None, s, e, s1, s2) -> collect_invs_stmt s (collect_invs_stmt s1 (collect_invs_stmt s2 acc))
+  | Sbreak -> acc
+  | Scontinue -> acc
+  | Sswitch (e, s) -> collect_invs_stmt s acc
+  | Slabeled (l, s) -> collect_invs_stmt s acc
+  | Sgoto _ -> acc
+  | Sreturn e -> acc
+  | Sblock ss -> List.fold_left (fun acc s -> collect_invs_stmt s acc) acc ss
+  | Sdecl _ -> acc
+  | Sasm (_, _, _, _, _) -> acc
+  | Sannot a -> (match a with
+                 | (i, RawExprAnnot_annot s) -> acc
+                 | (i, RawExprAnnot_assert sd) -> (false, (i, sd)) :: acc)
+
+let collect_invs : fundef -> (bool * (Camlcoq.Z.t * state_descr)) list = fun def ->
+  collect_invs_stmt def.fd_body []
 
 let gd_name def_or_decl =
   match def_or_decl.gdesc with
@@ -1174,9 +1194,9 @@ let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
   pp_inlined false (Some "final") inlined.ic_final;
   pp "@]"
 
-let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
-  (AST.ident * Ctypes.coq_type) list -> (AST.ident * Ctypes.coq_type) list -> state_descr pp =
-    fun print_unused print_exist fn_params fn_vars fn_temps ff sd ->
+let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
+  decl list -> state_descr pp =
+    fun print_unused print_exist fn_name fn_args fn_vars ff sd ->
   let pp fmt = Format.fprintf ff fmt in
   (* Printing the existentials. *)
   begin
@@ -1192,17 +1212,13 @@ let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
     let fn (id, ty) =
       (* Check if [id_var] is a function argument. *)
       try
-        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_params) in
-        ("_" ^ id, (true, layout, Some(ty)))
+        ignore(List.find (fun (a, b) -> a.name = id) fn_args);
+        ("_" ^ id, Some(ty))
       with Not_found ->
       (* Not a function argument, check that it is a local variable. *)
       try
-        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_vars) in
-        ("_" ^ id, (false, layout, Some(ty)))
-      with Not_found ->
-      try
-        let layout = List.assoc ("_" ^ id) (List.map (fun (a, b) -> (var_name a, b)) fn_temps) in
-        ("_" ^ id, (true, layout, Some(ty)))
+        ignore(List.find (fun (_, n, _, _) -> n.name = id) fn_vars);
+        ("_" ^ id, Some(ty))
       with Not_found ->
         Panic.panic_no_pos "[%s] is neither a local variable nor an \
           argument." id
@@ -1212,9 +1228,9 @@ let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
   let unused =
     let unused_args =
       let pred (id, _) =
-        List.for_all (fun (id_var, _) -> var_name id <> "_" ^ id_var) used
+        List.for_all (fun (id_var, _) -> id.name <> id_var) used
       in
-      let args = List.filter pred (fn_params @ fn_temps) in
+      let args = List.filter pred fn_args in
       let fn (id, layout) =
         (*let ty =
           try
@@ -1222,30 +1238,28 @@ let pp_state_descr : bool -> bool -> (AST.ident * Ctypes.coq_type) list ->
             List.nth func_annot.fa_args i
           with Not_found | Failure(_) -> assert false (* Unreachable. *)
         in*)
-        (var_name id, (true, layout, None))
+        ("_" ^ id.name, None)
       in
       List.map fn args
     in
     let unused_vars =
-      let pred (id, _) =
-        List.for_all (fun (id_var, _) -> var_name id <> "_" ^ id_var) used
+      let pred (_, id, _, _) =
+        List.for_all (fun (id_var, _) -> id.name <> id_var) used
       in
       let vars = List.filter pred fn_vars in
-      List.map (fun (id, layout) -> (var_name id, (false, layout, None))) vars
+      List.map (fun (_, id, layout, _) -> ("_" ^ id.name, None)) vars
     in
     unused_args @ unused_vars
   in
   let all_vars = if print_unused then unused @ used else used in
   let first = ref true in
   let pp_sep ff _ = if !first then first := false else fprintf ff " ∗" in
-  let pp_var ff (id, (temp, layout, ty)) =
+  let pp_var ff (id, ty) =
     match ty with
     | Some ty -> 
-        if temp then fprintf ff "%a@;(∃ val_%s, temp %s val_%s ∗ val_%s ◁ᵥₐₗ|%a| %a)" pp_sep () id id id id (pp_layout false) layout pp_type_expr ty
-        else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ %a)" pp_sep () id id (pp_layout true) layout id id pp_type_expr ty
+        fprintf ff "%a@;ty_own_var f_%s %s %a" pp_sep () fn_name id pp_type_expr ty
     | None ->
-        if temp then fprintf ff "%a@;temp %s Vundef" pp_sep () id
-        else fprintf ff "%a@;(∃ val_%s, local %s %a val_%s ∗ val_%s ◁ₗ uninit %a)" pp_sep () id id (pp_layout true) layout id id (pp_layout true) layout
+        fprintf ff "%a@;ty_own_var_uninit f_%s %s" pp_sep () fn_name id
   in
   begin
     match (all_vars, sd.sd_constrs) with
@@ -1299,7 +1313,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
 
   (* Statement of the typing proof. *)
   if List.length func_args <> List.length func_annot.fa_args then
-    Panic.panic_no_pos "Argument number missmatch between code and spec.";
+    Panic.panic_no_pos "Argument number mismatch between code and spec.";
   pp "\n@;(* Typing proof for [%s]. *)@;" func_name;
   (* Get all globals, including those needed for inlined functions. *)
   (* Do an analysis and add this information to the function AST at some point, as in ail_to_coq. *)
@@ -1402,6 +1416,23 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
       let pp_var ff (x, _) = pp_print_string ff x in
       pp "prepare_parameters (%a).@;" (pp_sep " " pp_var) func_annot.fa_parameters;
     end;
+  let pp_inv (is_inv, (id, annot)) =
+    (* Opening a box and printing the existentials. *)
+    pp "@;  @[<v 2><[ \"%a\" :=" ExportBase.coqZ id;
+    begin if is_inv then pp_state_descr is_inv is_inv func_name func_args func_vars ff annot
+    else let (exist_idents, exist_types) = List.split annot.sd_exists in
+       pp "(λ %a : %a,@;%a"
+         (pp_encoded_patt_name false) exist_idents
+         (pp_as_prod (pp_simple_coq_expr true)) exist_types
+         pp_encoded_patt_bindings exist_idents;
+       pp_state_descr false false func_name func_args func_vars ff annot end;
+    (* Closing the box. *)
+    pp "@]@;]> $"
+  in
+  let invs = collect_invs def in
+  pp "prepare_asserts (";
+  List.iter pp_inv invs;
+  pp "@;  ∅@;)%%I : gmap nat assert).";
   let pp_do_step id =
     pp "@;- repeat liRStep; try type_function_end; liShow.";
     pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." func_name id

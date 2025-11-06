@@ -116,16 +116,17 @@ Extract Constant Compopts.debug =>
 
 (* Cabs *)
 Extract Constant Cabs.loc => "Location.t".
-Extract Inlined Constant Cabs.string => "String.t".
 Extract Constant Cabs.char_code => "int64".
 
 (* RcAnnot *)
+Extract Inlined Constant RcAnnot.string => "String.t".
 Extract Constant RcAnnot.function_annot => "Rc_annot.function_annot".
 Extract Constant RcAnnot.state_descr => "Rc_annot.state_descr".
 Extract Constant RcAnnot.raw_expr_annot => "Rc_annot.raw_expr_annot".
 Extract Constant RcAnnot.struct_annot => "Rc_annot.struct_annot".
 Extract Constant RcAnnot.member_annot => "Rc_annot.member_annot".
 Extract Constant RcAnnot.default_struct_annot => "Rc_annot.SA_basic Rc_annot.default_basic_struct_annot".
+Extract Constant RcAnnot.default_union_annot => "Rc_annot.SA_union".
 
 (* Processor-specific extraction directives *)
 

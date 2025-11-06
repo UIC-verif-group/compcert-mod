@@ -1050,6 +1050,11 @@ let swrap = function
   | Errors.Error msg ->
       error "retyping error: %s" (string_of_errmsg msg); Csyntax.Sskip
 
+let cook_annot raw_annot =
+  match raw_annot with
+  | (_, Rc_annot.RawExprAnnot_annot s) -> RcAnnot.ExprAnnot_annot s
+  | (i, Rc_annot.RawExprAnnot_assert _) -> RcAnnot.ExprAnnot_assert i
+
 let rec convertStmt env s =
   updateLoc s.sloc;
   match s.sdesc with
@@ -1066,13 +1071,13 @@ let rec convertStmt env s =
       swrap (Ctyping.sifthenelse te (convertStmt env s1) (convertStmt env s2))
   | C.Swhile(sd, e, s1) ->
       let te = convertExpr env e in
-      swrap (Ctyping.swhile sd te (convertStmt env s1))
+      swrap (Ctyping.swhile (Option.map fst sd) te (convertStmt env s1))
   | C.Sdowhile(sd, s1, e) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sdowhile sd te (convertStmt env s1))
+      swrap (Ctyping.sdowhile (Option.map fst sd) te (convertStmt env s1))
   | C.Sfor(sd, s1, e, s2, s3) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sfor sd
+      swrap (Ctyping.sfor (Option.map fst sd)
                   (convertStmt env s1) te
                   (convertStmt env s2) (convertStmt env s3))
   | C.Sbreak ->
@@ -1103,7 +1108,7 @@ let rec convertStmt env s =
         unsupported "inline 'asm' statement (consider adding option [-finline-asm])";
       Csyntax.Sdo (convertAsm s.sloc env txt outputs inputs clobber)
   | C.Sannot(a) ->
-      Csyntax.Sannot(a)
+      Csyntax.Sannot(cook_annot a)
 
 and convertSwitch env is_64 = function
   | {sdesc = C.Sskip} ->

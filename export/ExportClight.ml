@@ -84,9 +84,9 @@ let rec expr p = function
       fprintf p "(Ealignof %a %a)" typ t1 typ t
 
 (* Statements *)
-let expr_annot f p = function
-  | Rc_annot.RawExprAnnot_annot s    -> fprintf p "RawExprAnnot_annot %s" s
-  | Rc_annot.RawExprAnnot_assert sd -> fprintf p "RawExprAnnot_assert %a" (Coq_pp.pp_state_descr false false f.fn_params f.fn_vars f.fn_temps) sd
+let expr_annot p = function
+  | RcAnnot.ExprAnnot_annot s -> fprintf p "(ExprAnnot_annot (%s))" s
+  | RcAnnot.ExprAnnot_assert i -> fprintf p "(ExprAnnot_assert (%a))" coqZ i
 
 let rec stmt f p = function
   | Sskip ->
@@ -113,11 +113,11 @@ let rec stmt f p = function
   | Sifthenelse(e, s1, s2) ->
       fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e (stmt f) s1 (stmt f) s2
   | Sloop (sd, Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option coqZ) sd expr e (stmt f) s
   | Sloop (sd, Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd expr e (stmt f) s
+      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" (print_option coqZ) sd expr e (stmt f) s
   | Sloop(sd, s1, s2) ->
-      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" (print_option (Coq_pp.pp_state_descr true true f.fn_params f.fn_vars f.fn_temps)) sd (stmt f) s1 (stmt f) s2
+      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" (print_option coqZ) sd (stmt f) s1 (stmt f) s2
   | Sbreak ->
       fprintf p "Sbreak"
   | Scontinue ->
@@ -131,7 +131,7 @@ let rec stmt f p = function
   | Sgoto lbl ->
       fprintf p "(Sgoto %a)" ident lbl
   | Sannot a ->
-      fprintf p "(Sannot %a)" (print_option (expr_annot f)) a
+      fprintf p "(Sannot %a)" expr_annot a
 
 and lblstmts f p = function
   | LSnil ->
