@@ -1421,11 +1421,11 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
     pp "@;  @[<v 2>IPROP_HINT ";
     begin match is_inv with
     | true ->
-       pp "(LOOP_INV \"%a\") (λ _ : unit," ExportBase.coqZ id;
+       pp "(LOOP_INV %a) (λ _ : unit," ExportBase.coqZ id;
        pp_state_descr true true func_name func_args func_vars ff annot
     | false ->
       let (exist_idents, exist_types) = List.split annot.sd_exists in
-       pp "(ASSERT_COND \"%a\") (λ %a : %a,@;%a" ExportBase.coqZ id
+       pp "(ASSERT_COND %a) (λ %a : %a,@;%a" ExportBase.coqZ id
          (pp_encoded_patt_name false) exist_idents
          (pp_as_prod (pp_simple_coq_expr true)) exist_types
          pp_encoded_patt_bindings exist_idents;

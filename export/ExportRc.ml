@@ -180,14 +180,14 @@ let export_clight sourcename csyntax ofile =
   close_out oc
 
 (* From C source to exported AST *)
-let compile_c_file sourcename ifile ofile =
+let compile_to_clight sourcename ast ofile =
   (*let set_dest dst opt ext =
     dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
   set_dest Cprint.destination option_dparse ".parsed.c";
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";*)
-  let cs = Frontend.parse_c_file sourcename ifile in
+  let cs = Timing.time "CompCert C generation" C2C.convertProgram ast in
   export_clight sourcename cs ofile
 
 (** Command line configuration for the ["check"] command. *)
@@ -296,7 +296,7 @@ let run : config -> string -> unit = fun cfg c_file ->
       c_file_rel ifile in
   (* Generate the code file. *)
   let open Coq_pp in
-  compile_c_file c_file_rel ifile code_file;
+  compile_to_clight c_file_rel coq_ast code_file;
   (* Generate the spec file. *)
   let mode = Spec(c_file_rel, path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
   write mode spec_file coq_ast;
