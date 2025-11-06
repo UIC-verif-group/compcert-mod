@@ -291,7 +291,8 @@ let run : config -> string -> unit = fun cfg c_file ->
   CPragmas.reset();
   (* Parsing and production of a simplified C AST *)
   let coq_ast =
-    Parse.preprocessed_file
+    Parse.preprocessed_file ~unblock: true
+      ~struct_passing:true
       c_file_rel ifile in
   (* Generate the code file. *)
   let open Coq_pp in

@@ -1139,7 +1139,7 @@ let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
   let pp_spec def_or_decl =
     let id = gd_name def_or_decl
     in
-    match def_or_decl.gdesc with Gfundef _ | Gdecl _ -> (
+    match def_or_decl.gdesc with Gfundef _ (*| Gdecl _*) -> (
     let annot =
       match def_or_decl.gdesc with
       | Gfundef fd -> (match fd.fd_annot with Some annot -> annot
@@ -1221,7 +1221,7 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
         ("_" ^ id, Some(ty))
       with Not_found ->
         Panic.panic_no_pos "[%s] is neither a local variable nor an \
-          argument." id
+          argument to function [%s]." id fn_name
     in
     List.map fn sd.sd_inv_vars
   in
