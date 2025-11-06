@@ -1416,23 +1416,28 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
       let pp_var ff (x, _) = pp_print_string ff x in
       pp "prepare_parameters (%a).@;" (pp_sep " " pp_var) func_annot.fa_parameters;
     end;
-  let pp_inv (is_inv, (id, annot)) =
-    (* Opening a box and printing the existentials. *)
-    pp "@;  @[<v 2><[ \"%a\" :=" ExportBase.coqZ id;
-    begin if is_inv then pp_state_descr is_inv is_inv func_name func_args func_vars ff annot
-    else let (exist_idents, exist_types) = List.split annot.sd_exists in
-       pp "(λ %a : %a,@;%a"
+  let pp_hint (is_inv, (id, annot)) =
+    (* Opening a box. *)
+    pp "@;  @[<v 2>IPROP_HINT ";
+    begin match is_inv with
+    | true ->
+       pp "(LOOP_INV \"%a\") (λ _ : unit," ExportBase.coqZ id;
+       pp_state_descr true true func_name func_args func_vars ff annot
+    | false ->
+      let (exist_idents, exist_types) = List.split annot.sd_exists in
+       pp "(ASSERT_COND \"%a\") (λ %a : %a,@;%a" ExportBase.coqZ id
          (pp_encoded_patt_name false) exist_idents
          (pp_as_prod (pp_simple_coq_expr true)) exist_types
          pp_encoded_patt_bindings exist_idents;
-       pp_state_descr false false func_name func_args func_vars ff annot end;
+       pp_state_descr false false func_name func_args func_vars ff annot
+    end;
     (* Closing the box. *)
-    pp "@]@;]> $"
+    pp "@;)%%I ::@]"
   in
-  let invs = collect_invs def in
-  pp "prepare_asserts (";
-  List.iter pp_inv invs;
-  pp "@;  ∅@;)%%I : gmap nat assert).";
+  let hints = collect_invs def in
+  pp "prepare_hints (";
+  List.iter pp_hint hints;
+  pp "@;  @nil Prop@;).";
   let pp_do_step id =
     pp "@;- repeat liRStep; try type_function_end; liShow.";
     pp "@;  all: print_typesystem_goal \"%s\" \"%s\"." func_name id
