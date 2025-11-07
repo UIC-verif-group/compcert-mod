@@ -127,6 +127,7 @@ Extract Constant RcAnnot.struct_annot => "Rc_annot.struct_annot".
 Extract Constant RcAnnot.member_annot => "Rc_annot.member_annot".
 Extract Constant RcAnnot.default_struct_annot => "Rc_annot.SA_basic Rc_annot.default_basic_struct_annot".
 Extract Constant RcAnnot.default_union_annot => "Rc_annot.SA_union".
+Extract Constant RcAnnot.default_member_annot => "Rc_annot.MA_none".
 
 (* Processor-specific extraction directives *)
 

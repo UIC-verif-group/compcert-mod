@@ -28,7 +28,7 @@ Require Cabs.
 %token<Z * RcAnnot.state_descr> LOOP_ANNOT
 %token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
 %token<option RcAnnot.struct_annot> STRUCT_ANNOT
-%token<RcAnnot.member_annot> MEMBER_ANNOT
+%token<option RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -504,17 +504,17 @@ struct_declaration_list:
 
 struct_declaration:
 | decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
-    { Cabs.Field_group (fst decspec) ((None, fst decls) :: rev' (snd decls)) (snd decspec) }
+    { Cabs.Field_group (fst decspec) ((Some RcAnnot.default_member_annot, fst decls) :: rev' (snd decls)) (snd decspec) }
 (* Extension to C99 grammar needed to parse some GNU header files. *)
 | decspec = specifier_qualifier_list SEMICOLON
-    { Cabs.Field_group (fst decspec) [(None,(None,None))] (snd decspec) }
+    { Cabs.Field_group (fst decspec) [(Some RcAnnot.default_member_annot,(None,None))] (snd decspec) }
 (* C11 static assertions *)
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.Field_group_static_assert e loc_e s loc_s loc }
 (* Non-standard *)
 | annot = MEMBER_ANNOT decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
-    { Cabs.Field_group (fst decspec) ((Some annot, fst decls) :: rev' (snd decls)) (snd decspec) }
+    { Cabs.Field_group (fst decspec) ((annot, fst decls) :: rev' (snd decls)) (snd decspec) }
 
 specifier_qualifier_list:
 | typ = type_specifier rest = specifier_qualifier_list
@@ -530,10 +530,10 @@ struct_declarator_list:
 | decl = struct_declarator
     { (decl, []) }
 | declq = struct_declarator_list COMMA declt = struct_declarator
-    { (fst declq, (None, declt)::snd declq) }
+    { (fst declq, (Some RcAnnot.default_member_annot, declt)::snd declq) }
 (* Non-standard *)
 | declq = struct_declarator_list COMMA annot = MEMBER_ANNOT declt = struct_declarator
-    { (fst declq, (Some annot, declt)::snd declq) }
+    { (fst declq, (annot, declt)::snd declq) }
 
 struct_declarator:
 | decl = declarator

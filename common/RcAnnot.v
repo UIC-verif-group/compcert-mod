@@ -12,6 +12,7 @@ Parameter member_annot : Type.
 
 Parameter default_struct_annot : struct_annot.
 Parameter default_union_annot : struct_annot.
+Parameter default_member_annot : member_annot.
 
 Inductive expr_annot :=
   | ExprAnnot_annot  (s : string)
