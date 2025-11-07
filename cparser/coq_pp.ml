@@ -1213,12 +1213,12 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
       (* Check if [id_var] is a function argument. *)
       try
         ignore(List.find (fun (a, b) -> a.name = id) fn_args);
-        ("_" ^ id, Some(ty))
+        (id, Some(ty))
       with Not_found ->
       (* Not a function argument, check that it is a local variable. *)
       try
         ignore(List.find (fun (_, n, _, _) -> n.name = id) fn_vars);
-        ("_" ^ id, Some(ty))
+        (id, Some(ty))
       with Not_found ->
         Panic.panic_no_pos "[%s] is neither a local variable nor an \
           argument to function [%s]." id fn_name
@@ -1238,7 +1238,7 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
             List.nth func_annot.fa_args i
           with Not_found | Failure(_) -> assert false (* Unreachable. *)
         in*)
-        ("_" ^ id.name, None)
+        (id.name, None)
       in
       List.map fn args
     in
@@ -1247,7 +1247,7 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
         List.for_all (fun (id_var, _) -> id.name <> id_var) used
       in
       let vars = List.filter pred fn_vars in
-      List.map (fun (_, id, layout, _) -> ("_" ^ id.name, None)) vars
+      List.map (fun (_, id, layout, _) -> (id.name, None)) vars
     in
     unused_args @ unused_vars
   in
@@ -1257,9 +1257,9 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
   let pp_var ff (id, ty) =
     match ty with
     | Some ty -> 
-        fprintf ff "%a@;ty_own_var f_%s %s %a" pp_sep () fn_name id pp_type_expr ty
+        fprintf ff "%a@;ty_own_var f_%s _%s %a" pp_sep () fn_name id pp_type_expr ty
     | None ->
-        fprintf ff "%a@;ty_own_var_uninit f_%s %s" pp_sep () fn_name id
+        fprintf ff "%a@;ty_own_var_uninit f_%s _%s" pp_sep () fn_name id
   in
   begin
     match (all_vars, sd.sd_constrs) with
