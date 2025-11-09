@@ -434,6 +434,9 @@ init_declarator:
 | declare_varname(declarator_noattrend) save_context attribute_specifier_list
 | declare_varname(declarator_noattrend) save_context attribute_specifier_list EQ c_initializer
     {}
+| idx = rc_attributes x = declare_varname(declarator_noattrend) save_context attribute_specifier_list
+| idx = rc_attributes x = declare_varname(declarator_noattrend) save_context attribute_specifier_list EQ c_initializer
+    { !set_annot_type idx (match snd x with Decl_fun _ | Decl_krfun _ -> FunctionAnnot | _ -> GlobalAnnot) }
 
 typedef_declarator_list:
 | typedef_declarator

@@ -114,7 +114,7 @@ with name :=
 
 (* A variable declarator ("name") with an initializer *)
 with init_name :=
-  | Init_name : name -> init_expression -> init_name
+  | Init_name : option global_annot -> name -> init_expression -> init_name
 
 (*
 ** Expressions

@@ -27,6 +27,7 @@ Require Cabs.
 %token<RcAnnot.function_annot> FUNCTION_ANNOT
 %token<Z * RcAnnot.state_descr> LOOP_ANNOT
 %token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
+%token<option RcAnnot.global_annot> GLOBAL_ANNOT
 %token<option RcAnnot.struct_annot> STRUCT_ANNOT
 %token<option RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
@@ -416,9 +417,14 @@ init_declarator_list:
 
 init_declarator:
 | name = declarator
-    { Cabs.Init_name name Cabs.NO_INIT }
+    { Cabs.Init_name None name Cabs.NO_INIT }
 | name = declarator EQ init = c_initializer
-    { Cabs.Init_name name init }
+    { Cabs.Init_name None name init }
+(* Non-standard *)
+| annot = GLOBAL_ANNOT name = declarator
+    { Cabs.Init_name annot name Cabs.NO_INIT }
+| annot = GLOBAL_ANNOT name = declarator EQ init = c_initializer
+    { Cabs.Init_name annot name init }
 
 (* 6.7.1 *)
 storage_class_specifier:
