@@ -420,20 +420,22 @@ expression:
    definitely reading a declaration, or [external_declaration], which
    means we could also be reading the beginning of a function definition. *)
 declaration(phantom):
-| declaration_specifiers(declaration(phantom)) init_declarator_list?    SEMICOLON
+| declaration_specifiers(declaration(phantom)) x = init_declarator_list?    SEMICOLON
+    { match x with None -> [] | Some xs -> xs }
 | declaration_specifiers_typedef               typedef_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
 
 init_declarator_list:
-| init_declarator
-| init_declarator_list COMMA init_declarator
-    {}
+| x = init_declarator
+    { [x] }
+| xs = init_declarator_list COMMA x = init_declarator
+    { x :: xs }
 
 init_declarator:
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list
-| declare_varname(declarator_noattrend) save_context attribute_specifier_list EQ c_initializer
-    {}
+| x = declare_varname(declarator_noattrend) save_context attribute_specifier_list
+| x = declare_varname(declarator_noattrend) save_context attribute_specifier_list EQ c_initializer
+    { x }
 
 typedef_declarator_list:
 | typedef_declarator
@@ -939,6 +941,17 @@ translation_item:
 %inline external_declaration:
 | function_definition
 | declaration(external_declaration)
+    {}
+| idx = rc_attributes x = declaration(external_declaration)
+    { match x with 
+      | [(_, Decl_fun)] | [(_, Decl_krfun)] ->
+          !set_annot_type idx ProtoAnnot
+      | [(_, Decl_ident)] | [(_, Decl_other)] ->
+          !set_annot_type idx GlobalAnnot 
+      | [] ->
+          ()
+      | _  -> 
+          !set_annot_type idx MultipleAnnot }
 | PRAGMA
     {}
 

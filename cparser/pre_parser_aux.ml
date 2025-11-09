@@ -24,6 +24,9 @@ let declare_varname:(string -> unit) ref = ref (fun _ -> assert false)
 let declare_typename:(string -> unit) ref = ref (fun _ -> assert false)
 
 type rc_annot_type =
+  | ProtoAnnot
+  | GlobalAnnot
+  | MultipleAnnot
   | FunctionAnnot
   | LoopAnnot
   | InlineAnnot
