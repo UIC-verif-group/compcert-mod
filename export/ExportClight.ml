@@ -88,10 +88,6 @@ let expr_annot p = function
   | RcAnnot.ExprAnnot_annot s -> fprintf p "(ExprAnnot_annot (%s))" s
   | RcAnnot.ExprAnnot_assert i -> fprintf p "(ExprAnnot_assert (%a%%nat))" coqZ i
 
-let print_index p = function
-  | Some i -> fprintf p "%a%%nat" coqZ i
-  | None -> ()
-
 let rec stmt f p = function
   | Sskip ->
       fprintf p "Sskip"
@@ -117,11 +113,14 @@ let rec stmt f p = function
   | Sifthenelse(e, s1, s2) ->
       fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e (stmt f) s1 (stmt f) s2
   | Sloop (sd, Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" print_index sd expr e (stmt f) s
+      (match sd with Some i -> fprintf p "@[<hv 2>(Swhile@ %a%%nat@ %a@ %a)@]" coqZ i expr e (stmt f) s
+       | None -> fprintf p "@[<hv 2>(Clight.Swhile@ %a@ %a)@]" expr e (stmt f) s)
   | Sloop (sd, Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a@ %a)@]" print_index sd expr e (stmt f) s
+      (match sd with Some i -> fprintf p "@[<hv 2>(Swhile@ %a%%nat@ %a@ %a)@]" coqZ i expr e (stmt f) s
+       | None -> fprintf p "@[<hv 2>(Clight.Swhile@ %a@ %a)@]" expr e (stmt f) s)
   | Sloop(sd, s1, s2) ->
-      fprintf p "@[<hv 2>(Sloop@ %a@ %a@ %a)@]" print_index sd (stmt f) s1 (stmt f) s2
+      (match sd with Some i -> fprintf p "@[<hv 2>(Sloop@ %a%%nat@ %a@ %a)@]" coqZ i (stmt f) s1 (stmt f) s2
+       | None -> fprintf p "@[<hv 2>(Clight.Sloop@ %a@ %a)@]" (stmt f) s1 (stmt f) s2)
   | Sbreak ->
       fprintf p "Sbreak"
   | Scontinue ->
