@@ -734,7 +734,7 @@ and rc_annot_args = parse
           in
           let attrs = doAttrs [a] in
           (match IMap.find i !annots_context with
-           | FunctionAnnot -> loop (Parser.FUNCTION_ANNOT (Rc_annot.function_annot attrs))
+           | FunctionAnnot -> loop (Parser.FUNCTION_ANNOT (handle_invalid_annot None (fun _ -> Some (Rc_annot.function_annot attrs)) ()))
            | LoopAnnot -> loop (Parser.LOOP_ANNOT (next_assert (), snd (Rc_annot.loop_annot attrs)))
            | InlineAnnot -> loop (Parser.INLINE_ANNOT (Option.map (fun a -> (next_assert (), a)) (Rc_annot.raw_expr_annot attrs),
                                                        a.Rc_annot.rc_attr_id.loc))

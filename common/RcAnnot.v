@@ -10,6 +10,7 @@ Parameter raw_expr_annot : Type.
 Parameter struct_annot : Type.
 Parameter member_annot : Type.
 
+Parameter default_function_annot : function_annot.
 Parameter default_struct_annot : struct_annot.
 Parameter default_union_annot : struct_annot.
 Parameter default_member_annot : member_annot.

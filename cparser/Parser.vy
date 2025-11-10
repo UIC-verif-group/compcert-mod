@@ -24,7 +24,7 @@ Require Cabs.
 
 %token<RcAnnot.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
 %token<RcAnnot.string * Cabs.loc> PRAGMA
-%token<RcAnnot.function_annot> FUNCTION_ANNOT
+%token<option RcAnnot.function_annot> FUNCTION_ANNOT
 %token<Z * RcAnnot.state_descr> LOOP_ANNOT
 %token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
 %token<option RcAnnot.struct_annot> STRUCT_ANNOT
@@ -1094,23 +1094,23 @@ function_definition:
   decl = declarator_noattrend
   dlist = declaration_list
   stmt = compound_statement
-   { Cabs.FUNDEF (fst specs) decl None (List.rev' dlist) stmt (snd specs) }
+   { Cabs.FUNDEF (fst specs) decl (Some RcAnnot.default_function_annot) (List.rev' dlist) stmt (snd specs) }
 | specs = declaration_specifiers
   decl = declarator
   stmt = compound_statement
-    { Cabs.FUNDEF (fst specs) decl None [] stmt (snd specs) }
+    { Cabs.FUNDEF (fst specs) decl (Some RcAnnot.default_function_annot) [] stmt (snd specs) }
 (* Non-standard *)
 | annot = FUNCTION_ANNOT
   specs = declaration_specifiers
   decl = declarator_noattrend
   dlist = declaration_list
   stmt = compound_statement
-   { Cabs.FUNDEF (fst specs) decl (Some annot) (List.rev' dlist) stmt (snd specs) }
+   { Cabs.FUNDEF (fst specs) decl annot (List.rev' dlist) stmt (snd specs) }
 | annot = FUNCTION_ANNOT
   specs = declaration_specifiers
   decl = declarator
   stmt = compound_statement
-    { Cabs.FUNDEF (fst specs) decl (Some annot) [] stmt (snd specs) }
+    { Cabs.FUNDEF (fst specs) decl annot [] stmt (snd specs) }
 
 declaration_list:
 | d = declaration
