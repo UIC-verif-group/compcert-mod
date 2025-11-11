@@ -1395,13 +1395,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
   begin
     let prefix = if used_functions = [] then "⊢ " else "" in
     let pp_impl ff def =
-      let (used_globals, used_functions) = func_deps def in
-      let wrap = used_globals <> [] || used_functions <> [] in
-      if wrap then fprintf ff "(";
       fprintf ff "f_%s" func_name;
-      List.iter (fprintf ff " global_%s") used_globals;
-      List.iter (fprintf ff " global_%s") used_functions;
-      if wrap then fprintf ff ")"
     in
     let pp_global f = pp "global_locs !! \"%s\" = Some global_%s →@;" f f in
     List.iter pp_global used_globals;
@@ -1428,8 +1422,8 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
       pp "global_%s ◁ᵥ|tptr tvoid| global_%s @@ " f f;
       begin
         match inlined_def with
-        | Some(def) -> pp "inline_function_ptr %a" pp_impl def
-        | None      -> pp "function_ptr type_of_%s" f
+        | Some(def) -> pp "inline_function_ptr Espec (globalenv prog) %a" pp_impl def
+        | None      -> pp "function_ptr Espec (globalenv prog) type_of_%s" f
       end;
       pp " -∗@;"
     in
