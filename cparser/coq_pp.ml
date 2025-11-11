@@ -851,7 +851,6 @@ let is_size_t t = match t with
   | C.TNamed (s, []) -> s.name = "size_t"
   | _ -> false
 
-(* This might need to run at the Clight level, so it knows about temps vs. vars. *)
 let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
       typedef list -> string list -> C.program pp =
     fun source coq_path imports inlined typedefs ctxt ff ast ->
@@ -1274,6 +1273,56 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
         List.iter (pp "%a@;%a" pp_sep () pp_constr) cs
   end
 
+(* calculate used globals and functions*)
+let rec func_deps_expr locals e acc =
+  match e.edesc with
+  | EConst _ -> acc
+  | ESizeof _ -> acc
+  | EAlignof _ -> acc
+  | EVar i -> (match List.find_opt (fun n -> n = i.name) locals with Some _ -> acc | None -> (i.name :: fst acc, snd acc))
+  | EUnop (_, e) -> func_deps_expr locals e acc
+  | EBinop (_, e1, e2, _) -> func_deps_expr locals e1 (func_deps_expr locals e2 acc)
+  | EConditional (e, e1, e2) -> func_deps_expr locals e (func_deps_expr locals e1 (func_deps_expr locals e2 acc))
+  | ECast (_, e) -> func_deps_expr locals e acc
+  | ECompound (_, i) -> func_deps_init locals i acc
+  | ECall ({edesc = EVar i}, es) -> List.fold_left (fun acc e -> func_deps_expr locals e acc) (fst acc, i.name :: snd acc) es
+  | ECall (_, es) -> List.fold_left (fun acc e -> func_deps_expr locals e acc) acc es
+
+and func_deps_init locals i acc =
+  match i with
+  | Init_single e -> func_deps_expr locals e acc
+  | Init_array is -> List.fold_left (fun acc i -> func_deps_init locals i acc) acc is
+  | Init_struct (_, fs) -> List.fold_left (fun acc i -> func_deps_init locals i acc) acc (List.map snd fs)
+  | Init_union (_, _, i) -> func_deps_init locals i acc
+
+let rec func_deps_stmt locals s acc =
+  match s.sdesc with
+  | Sskip -> acc
+  | Sdo e -> func_deps_expr locals e acc
+  | Sseq (s1, s2) -> func_deps_stmt locals s1 (func_deps_stmt locals s2 acc)
+  | Sif (e, s1, s2) -> func_deps_expr locals e (func_deps_stmt locals s1 (func_deps_stmt locals s2 acc))
+  | Swhile (a, e, s) -> func_deps_expr locals e (func_deps_stmt locals s acc)
+  | Sdowhile (a, s, e) -> func_deps_expr locals e (func_deps_stmt locals s acc)
+  | Sfor (a, s, e, s1, s2) -> func_deps_expr locals e (func_deps_stmt locals s (func_deps_stmt locals s1 (func_deps_stmt locals s2 acc)))
+  | Sbreak -> acc
+  | Scontinue -> acc
+  | Sswitch (e, s) -> func_deps_expr locals e (func_deps_stmt locals s acc)
+  | Slabeled (l, s) -> func_deps_stmt locals s acc
+  | Sgoto _ -> acc
+  | Sreturn (Some e) -> func_deps_expr locals e acc
+  | Sreturn None -> acc
+  | Sblock ss -> List.fold_left (fun acc s -> func_deps_stmt locals s acc) acc ss
+  | Sdecl (_, _, _, Some i) -> func_deps_init locals i acc
+  | Sdecl (_, _, _, None) -> acc
+  | Sasm (_, _, _, _, _) -> acc
+  | Sannot a -> acc
+
+let func_deps def =
+  let (a, b) = func_deps_stmt (List.map (fun (_, n, _, _) -> n.name) def.fd_locals @ List.map (fun (n, _) -> n.name) def.fd_params)
+    def.fd_body ([], []) in
+  let dedup = List.dedup String.compare in
+  (dedup a, dedup b)
+
 let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
     -> proof_kind -> C.program pp =
     fun source coq_path def imports ctxt proof_kind ff ast ->
@@ -1323,29 +1372,30 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
   (* Get all globals, including those needed for inlined functions. *)
   (* Do an analysis and add this information to the function AST at some point, as in ail_to_coq. *)
   let (used_globals, used_functions) =
-    (*let merge (g1, f1) (g2, f2) =
+    let merge (g1, f1) (g2, f2) =
       let dedup = List.dedup String.compare in
       (dedup (g1 @ g2), dedup (f1 @ f2))
     in
     let fn acc f =
-      match List.assoc_opt f ast(*.functions*)(*prog_defs?*) with
-      | Some(FDef(def)) when is_inlined def -> merge acc def.func_deps
-      | _                                   -> acc
+      match List.find_opt (fun gd -> gd_name gd = f) ast with
+      | Some({gdesc = Gfundef(def)}) when def.fd_inline -> merge acc (func_deps def)
+      | _ -> acc
     in
-    List.fold_left fn def.func_deps (snd def.func_deps)*) ([], [])
+    let deps = func_deps def in
+    List.fold_left fn deps (snd deps)
   in
   let deps = used_globals @ used_functions in
   let pp_args ff xs =
     let xs = List.map (fun s -> "global_" ^ s) xs in
     match xs with
     | [] -> ()
-    | _  -> fprintf ff " (%a : loc)" (pp_sep " " pp_str) xs
+    | _  -> fprintf ff " (%a : address)" (pp_sep " " pp_str) xs
   in
   pp "@[<v 2>Lemma type_%s%a :@;" func_name pp_args deps;
   begin
     let prefix = if used_functions = [] then "⊢ " else "" in
     let pp_impl ff def =
-      let (used_globals, used_functions) = (*def.func_deps*) ([], []) in
+      let (used_globals, used_functions) = func_deps def in
       let wrap = used_globals <> [] || used_functions <> [] in
       if wrap then fprintf ff "(";
       fprintf ff "f_%s" func_name;
@@ -1375,7 +1425,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
         | Some(Gfundef(def)) when is_inlined def -> Some(def)
         | _                                   -> None*) None
       in
-      pp "global_%s ◁ᵥ global_%s @@ " f f;
+      pp "global_%s ◁ᵥ|tptr tvoid| global_%s @@ " f f;
       begin
         match inlined_def with
         | Some(def) -> pp "inline_function_ptr %a" pp_impl def
