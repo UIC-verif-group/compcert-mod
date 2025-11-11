@@ -953,6 +953,11 @@ let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
       pp "  [instance %s_eq _ _ (%s_unfold %apatt__) with %i%%N].@;"
         inst_name id pp_params params unfold_order;
       pp "Global Existing Instance %s_%s_inst_generated." id inst_name;
+      pp "@;Definition %s_%s_inst_generated' %apatt__ :=@;"
+        id inst_name pp_params params;
+      pp "  [instance %s_eq' _ _ (%s_unfold %apatt__) with %i%%N].@;"
+        inst_name id pp_params params unfold_order;
+      pp "Global Existing Instance %s_%s_inst_generated'." id inst_name;
     in
     pp_instance false "simplify_hyp_place" "SimplifyHyp";
     pp_instance false "simplify_goal_place" "SimplifyGoal";

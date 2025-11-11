@@ -155,7 +155,7 @@ let currentLoc =
     let p = Lexing.lexeme_start_p lb in
     ({ lineno   = p.Lexing.pos_lnum;
             filename = p.Lexing.pos_fname;
-            byteno   = p.Lexing.pos_cnum;
+            byteno   = p.Lexing.pos_cnum - p.Lexing.pos_bol;
             ident    = getident ();})
 
 (* Error reporting *)
@@ -304,7 +304,6 @@ let identifier = identifier_nondigit (identifier_nondigit|digit)*
 
 (* Whitespaces *)
 let whitespace_char_no_newline = [' ' '\t'  '\011' '\012' '\r']
-let whitespace_char = [' ' '\t'  '\011' '\012' '\r' '\n']
 
 (* Integer constants *)
 let nonzero_digit = ['1'-'9']
@@ -586,8 +585,11 @@ and rc_annot_args = parse
   | ")]]"  { [] }
   | "\"" ([^ '"']* as a) "\")]]" { [{ Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                       Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] }] }
-  | "\"" ([^ '"']* as a) "\"," whitespace_char *
+  | "\"" ([^ '"']* as a) "\"," whitespace_char_no_newline *
                                  { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
+                                     Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] } :: rc_annot_args lexbuf }
+  | "\"" ([^ '"']* as a) "\"," whitespace_char_no_newline * '\n' whitespace_char_no_newline *
+                                 { new_line lexbuf; { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                      Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] } :: rc_annot_args lexbuf }
   | _ as c
       { fatal_error lexbuf "invalid symbol %C" c }
