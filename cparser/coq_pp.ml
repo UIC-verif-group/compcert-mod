@@ -1386,12 +1386,10 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
   in
   let deps = used_globals @ used_functions in
   let pp_args ff xs =
-    let xs = List.map (fun s -> "global_" ^ s) xs in
-    match xs with
-    | [] -> ()
-    | _  -> fprintf ff " (%a : address)" (pp_sep " " pp_str) xs
+    List.iter (fun s -> fprintf ff "let global_%s := \
+      (option.default 1%%positive (Genv.find_symbol (globalenv prog) _%s), Ptrofs.zero) in@;" s s) xs
   in
-  pp "@[<v 2>Lemma type_%s%a :@;" func_name pp_args deps;
+  pp "@[<v 2>Lemma type_%s :@; %a" func_name pp_args deps;
   begin
     let prefix = if used_functions = [] then "⊢ " else "" in
     let pp_impl ff def =
@@ -1419,7 +1417,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
         | Some(Gfundef(def)) when is_inlined def -> Some(def)
         | _                                   -> None*) None
       in
-      pp "global_%s ◁ᵥ|tptr tvoid| global_%s @@ " f f;
+      pp "adr2val global_%s ◁ᵥ|tptr (type_of_function f_%s)| global_%s @@ " f f f;
       begin
         match inlined_def with
         | Some(def) -> pp "inline_function_ptr Espec (globalenv prog) %a" pp_impl def
