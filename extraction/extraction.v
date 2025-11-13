@@ -146,7 +146,7 @@ Cd "extraction".
 
 Separate Extraction
    BinPos.Pos.pred Floats.Float.of_bits Floats.Float32.of_bits
-   SimplExpr.transl_program SimplLocals.transf_program
+   AST.transform_program SimplExpr.transl_program SimplLocals.transf_program
    Machregs.register_names Machregs.register_by_name
    Ctypes.signature_of_type
    Ctypes.merge_attributes Ctypes.remove_attributes 

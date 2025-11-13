@@ -159,13 +159,16 @@ let get_c_file_data : string -> c_file_data = fun c_file ->
   {orig_path; file_path; file_dir; base_name; root_dir; rel_path; proj_cfg}
 
 (* copy from ExportDriver so we don't link against its main *)
-let export_clight sourcename csyntax ofile =
+let export_clight sourcename csyntax ofile option_normalize =
   let loc = Diagnostics.file_loc sourcename in
   let clight =
     match SimplExpr.transl_program csyntax with
     | Errors.OK p ->
         begin match SimplLocals.transf_program p with
-        | Errors.OK p' -> p'
+        | Errors.OK p' ->
+          if option_normalize
+            then Clightnorm.norm_program p'
+            else p'
         | Errors.Error msg ->
           Diagnostics.fatal_error loc "%a" Driveraux.print_error  msg
         end
@@ -180,7 +183,7 @@ let export_clight sourcename csyntax ofile =
   close_out oc
 
 (* From C source to exported AST *)
-let compile_to_clight sourcename ast ofile =
+let compile_to_clight sourcename ast ofile option_normalize =
   (*let set_dest dst opt ext =
     dst := if !opt then Some (output_filename sourcename ~suffix:ext)
       else None in
@@ -188,11 +191,12 @@ let compile_to_clight sourcename ast ofile =
   set_dest PrintCsyntax.destination option_dcmedium ".compcert.c";
   set_dest PrintClight.destination option_dclight ".light.c";*)
   let cs = Timing.time "CompCert C generation" C2C.convertProgram ast in
-  export_clight sourcename cs ofile
+  export_clight sourcename cs ofile option_normalize
 
 (** Command line configuration for the ["check"] command. *)
 type config =
-  { no_locs     : bool
+  { normalize   : bool
+  ; no_locs     : bool
   ; no_analysis : bool
   ; no_build    : bool
   ; no_mem_cast : bool }
@@ -296,7 +300,7 @@ let run : config -> string -> unit = fun cfg c_file ->
       c_file_rel ifile in
   (* Generate the code file. *)
   let open Coq_pp in
-  compile_to_clight c_file_rel coq_ast code_file;
+  compile_to_clight c_file_rel coq_ast code_file cfg.normalize;
   (* Generate the spec file. *)
   let mode = Spec(c_file_rel, path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
   write mode spec_file coq_ast;
@@ -423,6 +427,12 @@ let no_analysis =
   in
   Arg.(value & flag & info ["no-extra-analysis"] ~doc)
 
+let normalize =
+  let doc =
+    "Run clightgen with -normalize (for VST compatibility)."
+  in
+  Arg.(value & flag & info ["normalize"] ~doc)
+
 let no_locs =
   let doc =
     "Do not output any location information in the generated Coq files."
@@ -442,10 +452,10 @@ let no_mem_cast =
   Arg.(value & flag & info ["no-mem-cast"] ~doc)
 
 let opts : config Term.t =
-  let build (*cpp_config*) no_analysis no_locs no_build no_mem_cast =
-    { (*cpp_config ;*) no_analysis ; no_locs ; no_build ; no_mem_cast }
+  let build normalize no_analysis no_locs no_build no_mem_cast =
+    { normalize ; no_analysis ; no_locs ; no_build ; no_mem_cast }
   in
-  Term.(const build $ (*cpp_config $*) no_analysis $ no_locs $ no_build $ no_mem_cast)
+  Term.(const build $ normalize $ no_analysis $ no_locs $ no_build $ no_mem_cast)
 
 let c_file =
   let doc = "C language source file." in
