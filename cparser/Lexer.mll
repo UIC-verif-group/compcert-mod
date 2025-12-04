@@ -585,10 +585,10 @@ and rc_annot_args = parse
   | ")]]"  { [] }
   | "\"" ([^ '"']* as a) "\")]]" { [{ Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                       Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] }] }
-  | "\"" ([^ '"']* as a) "\"," whitespace_char_no_newline *
+  | "\"" ([^ '"']* as a) "\"" whitespace_char_no_newline * ',' whitespace_char_no_newline *
                                  { { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                      Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] } :: rc_annot_args lexbuf }
-  | "\"" ([^ '"']* as a) "\"," whitespace_char_no_newline * '\n' whitespace_char_no_newline *
+  | "\"" ([^ '"']* as a) "\"" whitespace_char_no_newline * ',' whitespace_char_no_newline * '\n' whitespace_char_no_newline *
                                  { new_line lexbuf; { Rc_annot.rc_attr_arg_value = {elt = a; loc = currentLoc lexbuf};
                                      Rc_annot.rc_attr_arg_pieces = [{elt = a; loc = currentLoc lexbuf}] } :: rc_annot_args lexbuf }
   | _ as c
