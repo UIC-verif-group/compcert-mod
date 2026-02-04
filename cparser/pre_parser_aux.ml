@@ -27,6 +27,7 @@ type rc_annot_type =
   | FunctionAnnot
   | LoopAnnot
   | InlineAnnot
+  | GlobalAnnot
   | StructAnnot
   | MemberAnnot
 

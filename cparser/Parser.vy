@@ -27,6 +27,7 @@ Require Cabs.
 %token<option RcAnnot.function_annot> FUNCTION_ANNOT
 %token<Z * RcAnnot.state_descr> LOOP_ANNOT
 %token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
+%token<option RcAnnot.global_annot> GLOBAL_ANNOT
 %token<option RcAnnot.struct_annot> STRUCT_ANNOT
 %token<option RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
@@ -372,12 +373,17 @@ constant_expression:
 (* 6.7 *)
 declaration:
 | decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
-    { Cabs.DECDEF (fst decspec, rev' decls) (snd decspec) }
+    { Cabs.DECDEF None (fst decspec, rev' decls) (snd decspec) }
 | decspec = declaration_specifiers SEMICOLON
-    { Cabs.DECDEF (fst decspec, []) (snd decspec) }
+    { Cabs.DECDEF None (fst decspec, []) (snd decspec) }
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.STATIC_ASSERT e loc_e s loc_s loc }
+(* non-standard *)
+| annot = GLOBAL_ANNOT decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
+    { Cabs.DECDEF annot (fst decspec, rev' decls) (snd decspec) }
+| annot = GLOBAL_ANNOT decspec = declaration_specifiers SEMICOLON
+    { Cabs.DECDEF annot (fst decspec, []) (snd decspec) }
 
 declaration_specifiers_typespec_opt:
 | storage = storage_class_specifier rest = declaration_specifiers_typespec_opt

@@ -424,6 +424,8 @@ declaration(phantom):
 | declaration_specifiers_typedef               typedef_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
+| idx = rc_attributes declaration_specifiers(declaration(phantom)) init_declarator_list?    SEMICOLON
+    { !set_annot_type idx GlobalAnnot }
 
 init_declarator_list:
 | init_declarator

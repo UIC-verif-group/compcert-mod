@@ -213,7 +213,7 @@ Definition asm_flag := (encoding * list char_code)%type.
 *)
 Inductive definition :=
  | FUNDEF : list spec_elem -> name -> option function_annot -> list definition -> statement -> loc -> definition
- | DECDEF : init_name_group -> loc -> definition  (* global variable(s), or function prototype *)
+ | DECDEF : option global_annot -> init_name_group -> loc -> definition  (* global variable(s), or function prototype *)
  | PRAGMA : string -> loc -> definition
  | STATIC_ASSERT : expression -> loc -> constant -> loc -> loc -> definition
 

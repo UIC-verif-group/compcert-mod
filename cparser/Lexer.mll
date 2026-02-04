@@ -741,6 +741,7 @@ and rc_annot_args = parse
            | LoopAnnot -> loop (Parser.LOOP_ANNOT (next_assert (), snd (Rc_annot.loop_annot attrs)))
            | InlineAnnot -> loop (Parser.INLINE_ANNOT (Option.map (fun a -> (next_assert (), a)) (Rc_annot.raw_expr_annot attrs),
                                                        a.Rc_annot.rc_attr_id.loc))
+           | GlobalAnnot -> loop (Parser.GLOBAL_ANNOT (handle_invalid_annot ~loc None (fun _ -> Rc_annot.global_annot attrs) ()))
            | StructAnnot -> loop (Parser.STRUCT_ANNOT (handle_invalid_annot ~loc None (fun _ -> Some(Rc_annot.struct_annot attrs)) ()))
            | MemberAnnot -> loop (Parser.MEMBER_ANNOT (handle_invalid_annot ~loc None (fun _ -> Some(Rc_annot.member_annot attrs)) ())))
            (* wrap everything in handle_invalid_annot? *)

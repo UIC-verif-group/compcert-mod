@@ -34,7 +34,7 @@ type rc_annot_type =
   | LoopAnnot
   | InlineAnnot
   (* | ArgAnnot https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/ail_to_coq.ml?ref_type=heads#L741 *)
-  (* | GlobalAnnot *)
+  | GlobalAnnot
   | StructAnnot
   | MemberAnnot
 
