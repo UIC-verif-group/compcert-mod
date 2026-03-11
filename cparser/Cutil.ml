@@ -1307,8 +1307,8 @@ and subst_init phi = function
   | Init_union(name, f, i) ->
       Init_union(name, f, subst_init phi i)
 
-let subst_decl phi (sto, name, ty, optinit) =
-  (sto, name, ty,
+let subst_decl phi (global_annot, sto, name, ty, optinit) =
+  (global_annot, sto, name, ty,
    match optinit with None -> None | Some i -> Some (subst_init phi i))
 
 let rec subst_stmt phi s =

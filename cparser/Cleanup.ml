@@ -75,7 +75,7 @@ and add_init = function
   | Init_struct(id, il) -> addref id; List.iter (fun (_, i) -> add_init i) il
   | Init_union(id, _, i) -> addref id; add_init i
 
-let add_decl (sto, id, ty, init) =
+let add_decl (global_annot, sto, id, ty, init) =
   add_typ ty;
   match init with None -> () | Some i -> add_init i
 
@@ -127,7 +127,7 @@ let add_enum e =
    - Declaration of variables with default storage.
 *)
 
-let visible_decl (sto, id, ty, init) =
+let visible_decl (global_annot, sto, id, ty, init) =
   sto = Storage_default &&
   match ty with TFun _ -> false | _ -> true
 
@@ -157,7 +157,7 @@ let rec add_needed_globdecls accu = function
   | [] -> accu
   | g :: rem ->
       match g.gdesc with
-      | Gdecl((sto, id, ty, init) as decl) ->
+      | Gdecl((global_annot, sto, id, ty, init) as decl) ->
           if needed id
           then (add_decl decl; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
@@ -192,7 +192,7 @@ let saturate p =
 (* Remove unreferenced definitions *)
 
 let remove_unused_debug =  function
-  | Gdecl (_,id,_,_) ->  Debug.remove_unused id
+  | Gdecl (_,_,id,_,_) ->  Debug.remove_unused id
   | Gfundef f -> Debug.remove_unused_function f.fd_name
   | _ -> ()
 
@@ -201,7 +201,7 @@ let rec simpl_globdecls accu = function
   | g :: rem ->
       let need =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as decl) -> visible_decl decl || needed id
+        | Gdecl((global_annot, sto, id, ty, init) as decl) -> visible_decl decl || needed id
         | Gfundef f -> visible_fundef f || needed f.fd_name
         | Gcompositedecl(_, id, _) -> needed id
         | Gcompositedef(_, _, id, _, flds) -> needed id

@@ -837,7 +837,7 @@ let collect_invs : fundef -> (bool * (Camlcoq.Z.t * state_descr)) list = fun def
 
 let gd_name def_or_decl =
   match def_or_decl.gdesc with
-  | Gdecl (_, n, _, _) -> n.name
+  | Gdecl (_, _, n, _, _) -> n.name
   | Gfundef fd -> fd.fd_name.name
   | Gcompositedecl (_, n, _) -> n.name
   | Gcompositedef (_, _, n, _, _) -> n.name
@@ -1143,12 +1143,12 @@ let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
   let pp_spec def_or_decl =
     let id = gd_name def_or_decl
     in
-    match def_or_decl.gdesc with Gfundef _ (*| Gdecl _*) -> (
+    match def_or_decl.gdesc with Gfundef _ | Gdecl _ -> (
     let annot =
       match def_or_decl.gdesc with
       | Gfundef fd -> (match fd.fd_annot with Some annot -> annot
                        | None -> Panic.panic_no_pos "Annotations on declaration [%s] are invalid." id)
-(*      | FDec(Some(annot))                 -> annot *)
+      | Gdecl(Some(annot), _, _ , _ , _) -> annot
       | _                                 ->
       Panic.panic_no_pos "Annotations on declaration [%s] are invalid." id
     in
@@ -1221,7 +1221,7 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
       with Not_found ->
       (* Not a function argument, check that it is a local variable. *)
       try
-        ignore(List.find (fun (_, n, _, _) -> n.name = id) fn_vars);
+        ignore(List.find (fun (_, _, n, _, _) -> n.name = id) fn_vars);
         (id, Some(ty))
       with Not_found ->
         Panic.panic_no_pos "[%s] is neither a local variable nor an \
@@ -1247,11 +1247,11 @@ let pp_state_descr : bool -> bool -> string -> (C.ident * C.typ) list ->
       List.map fn args
     in
     let unused_vars =
-      let pred (_, id, _, _) =
+      let pred (_, _, id, _, _) =
         List.for_all (fun (id_var, _) -> id.name <> id_var) used
       in
       let vars = List.filter pred fn_vars in
-      List.map (fun (_, id, layout, _) -> (id.name, None)) vars
+      List.map (fun (_, _, id, layout, _) -> (id.name, None)) vars
     in
     unused_args @ unused_vars
   in
@@ -1312,13 +1312,13 @@ let rec func_deps_stmt locals s acc =
   | Sreturn (Some e) -> func_deps_expr locals e acc
   | Sreturn None -> acc
   | Sblock ss -> List.fold_left (fun acc s -> func_deps_stmt locals s acc) acc ss
-  | Sdecl (_, _, _, Some i) -> func_deps_init locals i acc
-  | Sdecl (_, _, _, None) -> acc
+  | Sdecl (_, _, _, _, Some i) -> func_deps_init locals i acc
+  | Sdecl (_, _, _, _, None) -> acc
   | Sasm (_, _, _, _, _) -> acc
   | Sannot a -> acc
 
 let func_deps def =
-  let (a, b) = func_deps_stmt (List.map (fun (_, n, _, _) -> n.name) def.fd_locals @ List.map (fun (n, _) -> n.name) def.fd_params)
+  let (a, b) = func_deps_stmt (List.map (fun (_, _, n, _, _) -> n.name) def.fd_locals @ List.map (fun (n, _) -> n.name) def.fd_params)
     def.fd_body ([], []) in
   let dedup = List.dedup String.compare in
   (dedup a, dedup b)

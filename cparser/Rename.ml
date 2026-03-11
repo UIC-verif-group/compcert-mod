@@ -145,9 +145,10 @@ let optexp env = function
   | None -> None
   | Some a -> Some (exp env a)
 
-let decl env (sto, id, ty, int) =
+let decl env (global_annot, sto, id, ty, int) =
   let (id', env') = rename env id in
-  ((sto,
+  ((global_annot,
+    sto,
     id',
     typ env' ty,
     match int with None -> None | Some i -> Some(init env' i)),
@@ -259,7 +260,7 @@ let rec reserve_public env = function
   | dcl :: rem ->
       let env' =
         match dcl.gdesc with
-        | Gdecl(sto, id, _, _) ->
+        | Gdecl(global_annot, sto, id, _, _) ->
             begin match sto with
             | Storage_default | Storage_extern -> enter_public env id
             | Storage_static -> env

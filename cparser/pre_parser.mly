@@ -425,7 +425,7 @@ declaration(phantom):
 | static_assert_declaration
     {}
 | idx = rc_attributes declaration_specifiers(declaration(phantom)) init_declarator_list?    SEMICOLON
-    { !set_annot_type idx GlobalAnnot }
+    { !set_annot_type idx FunctionAnnot }
 
 init_declarator_list:
 | init_declarator

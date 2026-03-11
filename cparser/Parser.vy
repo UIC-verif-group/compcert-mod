@@ -380,9 +380,9 @@ declaration:
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.STATIC_ASSERT e loc_e s loc_s loc }
 (* non-standard *)
-| annot = GLOBAL_ANNOT decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
+| annot = FUNCTION_ANNOT decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
     { Cabs.DECDEF annot (fst decspec, rev' decls) (snd decspec) }
-| annot = GLOBAL_ANNOT decspec = declaration_specifiers SEMICOLON
+| annot = FUNCTION_ANNOT decspec = declaration_specifiers SEMICOLON
     { Cabs.DECDEF annot (fst decspec, []) (snd decspec) }
 
 declaration_specifiers_typespec_opt:

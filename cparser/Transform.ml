@@ -34,7 +34,7 @@ let get_temps () =
 
 let new_temp_var ?(name = "t") ty =
   let id = Env.fresh_ident name in
-  temporaries := (Storage_default, id, ty, None) :: !temporaries;
+  temporaries := (Some(RcAnnot.default_function_annot), Storage_default, id, ty, None) :: !temporaries;
   id
 
 let new_temp ?(name = "t") ty =
@@ -205,7 +205,7 @@ let program
   | g :: gl ->
       let (desc', env') =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as d) ->
+        | Gdecl((global_annot, sto, id, ty, init) as d) ->
            (Gdecl(decl env g.gloc d), Env.add_ident env id sto ty)
         | Gfundef f ->
             (Gfundef(fundef env g.gloc f),

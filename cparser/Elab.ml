@@ -101,7 +101,7 @@ let emit_elab ?(debuginfo = true) ?(linkage = false) env loc td =
   top_declarations := dec :: !top_declarations;
   if linkage then begin
     match td with
-    | Gdecl(sto, id, ty, init) ->
+    | Gdecl(global_annot, sto, id, ty, init) ->
         top_environment := Env.add_ident !top_environment id sto ty
     | Gfundef f ->
         top_environment :=
@@ -1995,7 +1995,7 @@ let elab_expr ctx loc env a =
             let (id, sto, env, ty, linkage) =
               enter_or_refine_ident true loc env n Storage_extern ty in
             (* Emit an extern declaration for it *)
-            emit_elab ~linkage env loc (Gdecl(sto, id, ty, None));
+            emit_elab ~linkage env loc (Gdecl(Some(RcAnnot.default_function_annot), sto, id, ty, None));
             { edesc = EVar id; etyp = ty },env
         | _ -> elab env a1 in
       let (bl, env) = mmap elab env al in
@@ -2662,10 +2662,10 @@ let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
     warning loc Static_in_inline "non-constant static local variable '%s' in inline function may be different in different files" s;
   if local && not isfun && sto' <> Storage_extern && sto' <> Storage_static then
     (* Local definition *)
-    ((sto', id, ty', init') :: decls, env2)
+    ((None, sto', id, ty', init') :: decls, env2)
   else begin
     (* Global definition *)
-    emit_elab ~linkage env2 loc (Gdecl(sto', id, ty', init'));
+    emit_elab ~linkage env2 loc (Gdecl(None, sto', id, ty', init'));
     (* Make sure the initializer is constant. *)
     begin match init' with
       | Some i when not (Ceval.is_constant_init env2 i) ->
@@ -2708,7 +2708,7 @@ let elab_KR_function_parameters env params defs loc =
   in
   (* Extract names and types from the declarations *)
   let elab_param_def env = function
-  | DECDEF((spec', name_init_list), loc') ->
+  | DECDEF(annot, (spec', name_init_list), loc') ->
       let name_list = List.map extract_name name_init_list in
       if name_list = [] then
         error loc' "declaration does not declare a parameter";
@@ -2755,7 +2755,7 @@ let elab_KR_function_parameters env params defs loc =
           let id_var = Env.fresh_ident p in
           let init = Init_single { edesc = EVar id_param; etyp = ty_param } in
           match_params ((id_param, ty_param) :: params')
-                       ((Storage_default, id_var, ty_var, Some init)
+                       ((Some(RcAnnot.default_function_annot), Storage_default, id_var, ty_var, Some init)
                                                            :: extra_decls)
                        ps
         end
@@ -2873,14 +2873,14 @@ let elab_fundef genv spec name annot defs body loc =
   let lenv =
     List.fold_left add_param lenv params in
   let lenv =
-    List.fold_left (fun e (sto, id, ty, init) -> Env.add_ident e id sto ty)
+    List.fold_left (fun e (global_annot, sto, id, ty, init) -> Env.add_ident e id sto ty)
                    lenv extra_decls in
   (* Define "__func__" and enter it in the local environment *)
   let (func_ty, func_init) = __func__type_and_init s in
   let (func_id, _, lenv, func_ty, _) =
     enter_or_refine_ident true loc lenv "__func__" Storage_static func_ty in
   emit_elab ~debuginfo:false lenv loc
-                  (Gdecl(Storage_static, func_id, func_ty, Some func_init));
+                  (Gdecl(Some(RcAnnot.default_function_annot), Storage_static, func_id, func_ty, Some func_init));
   (* Elaborate function body *)
   let body1 = !elab_funbody_f ty_ret vararg (inline && sto <> Storage_static)
                               lenv body in
@@ -2940,7 +2940,7 @@ let elab_fundef genv spec name annot defs body loc =
   genv
 
 (* Definitions *)
-let elab_decdef (for_loop: bool) (local: bool) (nonstatic_inline: bool)
+let elab_decdef annot (for_loop: bool) (local: bool) (nonstatic_inline: bool)
                 (env: Env.t) ((spec, namelist): Cabs.init_name_group)
                 (loc: Cabs.loc) : decl list * Env.t =
   let (sto, inl, noret, tydef, bty, env') =
@@ -2999,8 +2999,8 @@ let elab_definition (for_loop: bool) (local: bool) (nonstatic_inline: bool)
       ([], env1)
 
   (* "int x = 12, y[10], *z" *)
-  | DECDEF(init_name_group, loc) ->
-    elab_decdef for_loop local nonstatic_inline env init_name_group loc
+  | DECDEF(annot, init_name_group, loc) ->
+    elab_decdef annot for_loop local nonstatic_inline env init_name_group loc
 
   (* pragma *)
   | PRAGMA(s, loc) ->
@@ -3298,7 +3298,7 @@ and elab_block_body env ctx sl =
       let (dcl, env') =
         elab_definition false true ctx.ctx_nonstatic_inline env def in
       let loc = elab_loc (Cabshelper.get_definitionloc def) in
-      let dcl = List.map (fun ((sto,id,ty,_) as d) ->
+      let dcl = List.map (fun ((_, sto,id,ty,_) as d) ->
         Debug.insert_local_declaration sto id ty loc;
         {sdesc = Sdecl d; sloc = loc}) dcl in
       let sl1',env' = elab_block_body env' ctx sl1 in

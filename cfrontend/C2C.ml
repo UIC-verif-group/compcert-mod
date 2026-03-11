@@ -1148,7 +1148,7 @@ let convertFundef loc env fd =
       fd.fd_params in
   let vars =
     List.map
-      (fun (sto, id, ty, init) ->
+      (fun (global_annot, sto, id, ty, init) ->
         if sto = Storage_extern || sto = Storage_static then
           unsupported "'static' or 'extern' local variable";
         if init <> None then
@@ -1188,7 +1188,7 @@ let convertFundef loc env fd =
 
 let re_builtin = Str.regexp "__builtin_"
 
-let convertFundecl env (sto, id, ty, optinit) =
+let convertFundecl env (global_annot, sto, id, ty, optinit) =
   let (args, res, cconv) =
     match convertTyp env ty with
     | Tfunction(args, res, cconv) -> (args, res, cconv)
@@ -1234,7 +1234,7 @@ let convertInitializer env ty i =
 
 (** Global variable *)
 
-let convertGlobvar loc env (sto, id, ty, optinit) =
+let convertGlobvar loc env (global_annot, sto, id, ty, optinit) =
   let id' = intern_string id.name in
   Debug.atom_global id id';
   let ty' = convertTyp env ty in
@@ -1283,7 +1283,7 @@ let rec convertGlobdecls env res gl =
   | g :: gl' ->
       updateLoc g.gloc;
       match g.gdesc with
-      | C.Gdecl((sto, id, ty, optinit) as d) ->
+      | C.Gdecl((global_annot, sto, id, ty, optinit) as d) ->
           (* Functions become external declarations.
              Other types become variable declarations. *)
           begin match Cutil.unroll env ty with
@@ -1292,7 +1292,7 @@ let rec convertGlobdecls env res gl =
                 warning Diagnostics.Unnamed "'%s' is declared without a function prototype" id.name;
               convertGlobdecls env (convertFundecl env d :: res) gl'
           | _ ->
-              convertGlobdecls env (convertGlobvar g.gloc env d :: res) gl'
+              convertGlobdecls env (convertGlobvar g.gloc env d :: res) gl' 
           end
       | C.Gfundef fd ->
           convertGlobdecls env (convertFundef g.gloc env fd :: res) gl'
@@ -1430,13 +1430,13 @@ let cleanupGlobals p =
         if IdentSet.mem fd.fd_name !strong then
           error "multiple definitions of %s" fd.fd_name.name;
         strong := IdentSet.add fd.fd_name !strong
-    | C.Gdecl(Storage_extern, id, ty, init) ->
+    | C.Gdecl(global_annot, Storage_extern, id, ty, init) ->
         extern := IdentSet.add id !extern
-    | C.Gdecl(sto, id, ty, Some i) ->
+    | C.Gdecl(global_annot, sto, id, ty, Some i) ->
         if IdentSet.mem id !strong then
           error "multiple definitions of %s" id.name;
         strong := IdentSet.add id !strong
-    | C.Gdecl(sto, id, ty, None) ->
+    | C.Gdecl(global_annot, sto, id, ty, None) ->
         weak := IdentSet.add id !weak
     | _ -> () in
   List.iter classify_def p;
@@ -1447,7 +1447,7 @@ let cleanupGlobals p =
     | g :: gl ->
         updateLoc g.gloc;
         match g.gdesc with
-        | C.Gdecl(sto, id, ty, init) ->
+        | C.Gdecl(global_annot, sto, id, ty, init) ->
             let better_def_exists =
               if sto = Storage_extern then
                 IdentSet.mem id !strong || IdentSet.mem id !weak

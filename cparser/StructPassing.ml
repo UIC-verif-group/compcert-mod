@@ -425,8 +425,8 @@ and transf_init env = function
 
 (* Declarations *)
 
-let transf_decl env loc (sto, id, ty, init) =
-  (sto, id, transf_type env ty,
+let transf_decl env loc (global_annot, sto, id, ty, init) =
+  (global_annot, sto, id, transf_type env ty,
    match init with None -> None | Some i -> Some (transf_init env i))
 
 (* Transformation of statements and function bodies *)

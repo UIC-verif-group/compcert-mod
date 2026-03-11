@@ -371,7 +371,7 @@ let storage pp = function
   | Storage_auto -> ()   (* used only in blocks, where it can be omitted *)
   | Storage_register -> fprintf pp "register "
 
-let full_decl pp (sto, id, ty, int) =
+let full_decl pp (global_annot, sto, id, ty, int) =
   fprintf pp "@[<hov 2>%a" storage sto;
   dcl pp ty (fun pp -> fprintf pp " %a" ident id);
   begin match int with
