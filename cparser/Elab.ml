@@ -2662,10 +2662,10 @@ let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
     warning loc Static_in_inline "non-constant static local variable '%s' in inline function may be different in different files" s;
   if local && not isfun && sto' <> Storage_extern && sto' <> Storage_static then
     (* Local definition *)
-    ((None, sto', id, ty', init') :: decls, env2)
+    ((Some(RcAnnot.default_function_annot), sto', id, ty', init') :: decls, env2)
   else begin
     (* Global definition *)
-    emit_elab ~linkage env2 loc (Gdecl(None, sto', id, ty', init'));
+    emit_elab ~linkage env2 loc (Gdecl(Some(RcAnnot.default_function_annot), sto', id, ty', init'));
     (* Make sure the initializer is constant. *)
     begin match init' with
       | Some i when not (Ceval.is_constant_init env2 i) ->
