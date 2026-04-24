@@ -1321,7 +1321,7 @@ let func_deps def =
   let (a, b) = func_deps_stmt (List.map (fun (_, _, n, _, _) -> n.name) def.fd_locals @ List.map (fun (n, _) -> n.name) def.fd_params)
     def.fd_body ([], []) in
   let dedup = List.dedup String.compare in
-  (dedup a, dedup b)
+  (dedup a, List.filter (fun i -> i <> "assert") (dedup b))
 
 let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
     -> proof_kind -> C.program pp =
