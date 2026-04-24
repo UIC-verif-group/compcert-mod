@@ -88,6 +88,10 @@ let expr_annot p = function
   | RcAnnot.ExprAnnot_annot s -> fprintf p "(ExprAnnot_annot (%s))" s
   | RcAnnot.ExprAnnot_assert i -> fprintf p "(ExprAnnot_assert (%a%%nat))" coqZ i
 
+let is_assert = function
+  | Evar(id, t) -> Hashtbl.find string_of_atom id = "assert"
+  | _ -> false
+
 let rec stmt f p = function
   | Sskip ->
       fprintf p "Sskip"
@@ -96,7 +100,9 @@ let rec stmt f p = function
   | Sset(id, e2) ->
       fprintf p "@[<hov 2>(Sset %a@ %a)@]" ident id expr e2
   | Scall(optid, e1, el) ->
-      fprintf p "@[<hov 2>(Scall %a@ %a@ %a)@]"
+      if is_assert e1 then fprintf p "@[<hov 2>(Sassert %a)@]"
+        expr (List.hd el)
+      else fprintf p "@[<hov 2>(Scall %a@ %a@ %a)@]"
         (print_option ident) optid expr e1 (print_list expr) el
   | Sbuiltin(optid, ef, tyl, el) ->
       fprintf p "@[<hov 2>(Sbuiltin %a@ %a@ %a@ %a)@]"
