@@ -284,7 +284,10 @@ let run : config -> string -> unit = fun cfg c_file ->
   (* Parse the comment annotations. *)
   let open Comment_annot in
   let ca =
-    let lines = read_file c_file.file_path in
+    (* use preprocessor to get includes *)
+    Frontend.preprocessC c_file_rel ifile;
+    let lines = read_file ifile in
+    (try Sys.remove ifile with Sys_error(_) -> ());
     parse_annots lines
   in
   let ctxt = List.map (fun s -> "Context " ^ s) ca.ca_context in
@@ -296,7 +299,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   (* Parsing and production of a simplified C AST *)
   let coq_ast =
     Parse.preprocessed_file ~unblock: true
-      ~struct_passing:true
+      ~struct_passing: true
       c_file_rel ifile in
   (* Generate the code file. *)
   let open Coq_pp in

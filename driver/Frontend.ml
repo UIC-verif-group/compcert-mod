@@ -82,6 +82,29 @@ let preprocess ifile ofile =
     command_error "preprocessor" exc;
   end
 
+let preprocessC ifile ofile =
+  Diagnostics.raise_on_errors ();
+  let output =
+    if ofile = "-" then None else Some ofile in
+  let cmd = List.concat [
+    Configuration.prepro; ["-C"];
+    (if Configuration.gnu_toolchain
+     then ["-std=" ^ !option_std]
+     else []);
+    predefined_macros;
+    abi_macros ();
+    (if !Clflags.use_standard_headers
+     then ["-I" ^ Filename.concat !Clflags.stdlib_path "include" ]
+     else []);
+    List.rev !prepro_options;
+    [ifile]
+  ] in
+  let exc = command ?stdout:output cmd in
+  if exc <> 0 then begin
+    if ofile <> "-" then safe_remove ofile;
+    command_error "preprocessor" exc;
+  end
+
 (* From preprocessed C to Csyntax *)
 
 let parse_c_file sourcename ifile =
