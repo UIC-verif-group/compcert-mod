@@ -845,6 +845,29 @@ let gd_name def_or_decl =
   | Genumdef (n, _, _) -> n.name
   | Gpragma s -> "pragma" ^ s
 
+(* consolidate annotations from function prototypes to definitions *)
+let rec find_index_aux f l i =
+  match l with
+  | [] -> None
+  | x :: xs -> if f x then Some i else find_index_aux f xs (i + 1)
+
+let find_index f l = find_index_aux f l 0
+
+let rec consolidate_annots ast =
+  match ast with [] -> [] | d :: ast' ->
+  match d.gdesc with
+  | Gdecl (Some annot, _, _, _, _) -> (match find_index (fun x -> gd_name x = gd_name d) ast' with
+      | Some i -> consolidate_annots (List.mapi (fun j x -> if j = i then
+          match x.gdesc with
+          | Gfundef f -> { x with gdesc = Gfundef { f with fd_annot =
+              match f.fd_annot with
+              | Some a -> Some { annot with fa_proof_kind = a.fa_proof_kind; fa_tactics = a.fa_tactics }
+              | None -> Some annot } }
+          | _ -> x
+          else x) ast')
+      | None -> d :: consolidate_annots ast')
+  | _ -> d :: consolidate_annots ast'
+
 let pp_typ : C.typ pp = fun ff t -> pp_layout false ff (C2C.convertTyp Env.empty t)
 
 let is_size_t t = match t with
@@ -952,11 +975,6 @@ let pp_spec : string -> Coq_path.t -> import list -> inlined_code ->
       pp "  [instance %s_eq _ _ (%s_unfold %apatt__) with %i%%N].@;"
         inst_name id pp_params params unfold_order;
       pp "Global Existing Instance %s_%s_inst_generated." id inst_name;
-      pp "@;Definition %s_%s_inst_generated' %apatt__ :=@;"
-        id inst_name pp_params params;
-      pp "  [instance %s_eq' _ _ (%s_unfold %apatt__) with %i%%N].@;"
-        inst_name id pp_params params unfold_order;
-      pp "Global Existing Instance %s_%s_inst_generated'." id inst_name;
     in
     pp_instance false "simplify_hyp_place" "SimplifyHyp";
     pp_instance false "simplify_goal_place" "SimplifyGoal";
@@ -1367,7 +1385,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
 
   (* Statement of the typing proof. *)
   if List.length func_args <> List.length func_annot.fa_args then
-    Panic.panic_no_pos "Argument number mismatch between code and spec.";
+    Panic.panic_no_pos "Argument number mismatch between code and spec for function %s." func_name;
   pp "\n@;(* Typing proof for [%s]. *)@;" func_name;
   (* Get all globals, including those needed for inlined functions. *)
   (* Do an analysis and add this information to the function AST at some point, as in ail_to_coq. *)

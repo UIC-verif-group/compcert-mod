@@ -2605,7 +2605,7 @@ let enter_typedef loc env sto (s, ty, init) =
     emit_elab env loc (Gtypedef(id, ty));
     env'
 
-let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
+let enter_decdef annot local nonstatic_inline loc sto (decls, env) (s, ty, init) =
   let isfun = is_function_type env ty in
   let has_init = init <> NO_INIT in
   if sto = Storage_register && has_std_alignas env ty then
@@ -2662,10 +2662,10 @@ let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
     warning loc Static_in_inline "non-constant static local variable '%s' in inline function may be different in different files" s;
   if local && not isfun && sto' <> Storage_extern && sto' <> Storage_static then
     (* Local definition *)
-    ((Some(RcAnnot.default_function_annot), sto', id, ty', init') :: decls, env2)
+    ((annot, sto', id, ty', init') :: decls, env2)
   else begin
     (* Global definition *)
-    emit_elab ~linkage env2 loc (Gdecl(Some(RcAnnot.default_function_annot), sto', id, ty', init'));
+    emit_elab ~linkage env2 loc (Gdecl(annot, sto', id, ty', init'));
     (* Make sure the initializer is constant. *)
     begin match init' with
       | Some i when not (Ceval.is_constant_init env2 i) ->
@@ -2981,7 +2981,7 @@ let elab_decdef annot (for_loop: bool) (local: bool) (nonstatic_inline: bool)
     if tydef then
       (decls, enter_typedef loc env1 sto decl)
     else
-      enter_decdef local nonstatic_inline loc sto (decls, env1) decl
+      enter_decdef annot local nonstatic_inline loc sto (decls, env1) decl
   in
   let (decls, env') = List.fold_left elab_one_name ([],env') namelist in
   (List.rev decls, env')

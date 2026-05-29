@@ -229,7 +229,7 @@ and slabel =
 (** Declarations *)
 
 and decl =
-  Rc_annot.function_annot option * storage * ident * typ * init option (* annot? *)
+  Rc_annot.function_annot option * storage * ident * typ * init option
 (** Function definitions *)
 
 type fundef = {

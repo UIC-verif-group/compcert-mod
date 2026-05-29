@@ -43,7 +43,8 @@ let predefined_macros =
     "-D__STDC_NO_ATOMICS__";
     "-D__STDC_NO_COMPLEX__";
     "-D__STDC_NO_THREADS__";
-    "-D__STDC_NO_VLA__"
+    "-D__STDC_NO_VLA__";
+    "-D__refinedc__"
   ] in
   if Version.buildnr = ""
   then macros

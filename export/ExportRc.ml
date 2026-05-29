@@ -305,6 +305,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   let open Coq_pp in
   compile_to_clight c_file_rel coq_ast code_file cfg.normalize;
   (* Generate the spec file. *)
+  let coq_ast = consolidate_annots coq_ast in
   let mode = Spec(c_file_rel, path, ca.ca_imports, ca.ca_inlined, ca.ca_typedefs, ctxt) in
   write mode spec_file coq_ast;
   (* Compute the list of proof files to generate. *)
