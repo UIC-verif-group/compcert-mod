@@ -1468,19 +1468,19 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
   pp "Local Open Scope printing_sugar.@;";
   pp "start_function \"%s\" (%a)" func_name
     pp_intros func_annot.fa_parameters;
-  if (*func_vars <> [] ||*) func_args <> [] then
+  (*if (*func_vars <> [] ||*) func_args <> [] then
     begin
       pp " =>";
       List.iter (fun (x,_) -> pp " arg_%s" x.name) func_args(*;
       List.iter (fun (_,x,_,_) -> pp " local_%s" x.name) func_vars*)
-    end;
+    end;*)
   pp ".@;";
   pp "start_function2.@;";
-  if func_annot.fa_parameters <> [] then
+  (*if func_annot.fa_parameters <> [] then
     begin
       let pp_var ff (x, _) = pp_print_string ff x in
       pp "prepare_parameters (%a).@;" (pp_sep " " pp_var) func_annot.fa_parameters;
-    end;
+    end;*)
   let pp_hint (is_inv, (id, annot)) =
     (* Opening a box. *)
     pp "@;  @[<v 2>IPROP_HINT ";

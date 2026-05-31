@@ -290,6 +290,7 @@ let run : config -> string -> unit = fun cfg c_file ->
     (try Sys.remove ifile with Sys_error(_) -> ());
     parse_annots lines
   in
+  Clflags.option_fstruct_passing := true;
   let ctxt = List.map (fun s -> "Context " ^ s) ca.ca_context in
   Frontend.preprocess c_file_rel ifile;
   (* from Frontend *)
