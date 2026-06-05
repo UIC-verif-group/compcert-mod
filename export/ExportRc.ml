@@ -195,7 +195,8 @@ let compile_to_clight sourcename ast ofile option_normalize =
 
 (** Command line configuration for the ["check"] command. *)
 type config =
-  { normalize   : bool
+  { jobs        : int
+  ; normalize   : bool
   ; no_locs     : bool
   ; no_analysis : bool
   ; no_build    : bool
@@ -370,7 +371,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   if not (cfg.no_build || c_file.proj_cfg.project_no_build) then
     begin
       Sys.chdir output_dir;
-      match Sys.command "dune build --display=short" with
+      match Sys.command ("dune build --display=short -j" ^ string_of_int cfg.jobs) with
       | 0           ->
           info "File \"%s\" successfully checked.\n%!" c_file.orig_path
       | i           ->
@@ -416,6 +417,13 @@ let cpp_D =
   in
   Term.(const build $ cpp_I $ cpp_include $ cpp_nostdinc $ cpp_D)*)
 
+
+let jobs =
+  let doc =
+    "Run dune build with $(docv) jobs."
+  in
+  Arg.(value & opt int 8 & info ["j"] ~doc ~docv:"JOBS")
+
 let no_analysis =
   let doc =
     "Disable the extra analyses (and the corresponding warnings) that are \
@@ -457,10 +465,10 @@ let no_mem_cast =
   Arg.(value & flag & info ["no-mem-cast"] ~doc)
 
 let opts : config Term.t =
-  let build normalize no_analysis no_locs no_build no_mem_cast =
-    { normalize ; no_analysis ; no_locs ; no_build ; no_mem_cast }
+  let build jobs normalize no_analysis no_locs no_build no_mem_cast =
+    { jobs; normalize ; no_analysis ; no_locs ; no_build ; no_mem_cast }
   in
-  Term.(const build $ normalize $ no_analysis $ no_locs $ no_build $ no_mem_cast)
+  Term.(const build $ jobs $ normalize $ no_analysis $ no_locs $ no_build $ no_mem_cast)
 
 let c_file =
   let doc = "C language source file." in
