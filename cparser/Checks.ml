@@ -37,12 +37,13 @@ let fold_over_stmt_loc ~(expr: 'a -> location -> exp -> 'a)
     | Sdo e -> expr a s.sloc e
     | Sif (e, s1, s2) -> fold (fold (expr a s.sloc e) s1) s2
     | Sseq (s1, s2) -> fold (fold a s1) s2
-    | Sfor (s1, e, s2, s3) -> fold (fold (expr (fold a s1) s.sloc e) s2) s3
-    | Swhile(e, s1) -> fold (expr a s.sloc e) s1
-    | Sdowhile (s1, e) -> expr (fold a s1) s.sloc e
+    | Sfor (_, s1, e, s2, s3) -> fold (fold (expr (fold a s1) s.sloc e) s2) s3
+    | Swhile(_, e, s1) -> fold (expr a s.sloc e) s1
+    | Sdowhile (_, s1, e) -> expr (fold a s1) s.sloc e
     | Sswitch (e, s1) -> fold (expr a s.sloc e) s1
     | Sblock sl -> List.fold_left fold a sl
     | Sdecl d -> decl a s.sloc d
+    | Sannot _ -> a
   and asm_operands a loc l =
     List.fold_left (fun a (_, _, e) -> expr a loc e) a l
   in fold a s
@@ -77,7 +78,7 @@ let fold_over_init ~(expr: 'a -> exp -> 'a) (a: 'a) (i: init) : 'a =
 let iter_over_init ~(expr: exp -> unit) (i:init) : unit =
   fold_over_init ~expr:(fun () e -> expr e) () i
 
-let fold_over_decl ~(expr: 'a -> exp -> 'a) (a: 'a) loc (sto, id, ty, init) : 'a=
+let fold_over_decl ~(expr: 'a -> exp -> 'a) (a: 'a) loc (global_annot, sto, id, ty, init) : 'a=
   match init with
   | Some i -> fold_over_init ~expr a i
   | None -> a
@@ -96,7 +97,7 @@ let traverse_program
     | g :: gl ->
       let env =
         match g.gdesc with
-        | Gdecl ((sto, id, ty, init) as d) ->
+        | Gdecl ((global_annot, sto, id, ty, init) as d) ->
           decl env g.gloc d;
           add_ident env id sto ty
         | Gfundef f ->
@@ -105,7 +106,7 @@ let traverse_program
         | Gcompositedecl (su,id,attr) ->
           compositedecl env g.gloc su id attr;
           add_composite env id (composite_info_decl su attr)
-        | Gcompositedef (su,id,attr,fl) ->
+        | Gcompositedef (_,su,id,attr,fl) ->
           compositedef env g.gloc su id attr fl;
           add_composite env id (composite_info_def env su attr fl)
         | Gtypedef (id,ty) ->
@@ -134,7 +135,7 @@ let unknown_attrs_typ env loc ty =
   let attr = attributes_of_type env ty in
   unknown_attrs loc attr
 
-let unknown_attrs_decl env loc (sto, id, ty, init) =
+let unknown_attrs_decl env loc (global_annot, sto, id, ty, init) =
   unknown_attrs_typ env loc ty
 
 let unknown_attrs_stmt env s =
@@ -203,7 +204,7 @@ let unused_variable env used loc (id, ty) =
     warning loc Unused_variable "unused variable '%s'" id.name
 
 let unused_variables_stmt env used s =
-  iter_over_stmt ~decl:(fun loc (sto, id, ty, init) -> unused_variable env used loc (id,ty)) s
+  iter_over_stmt ~decl:(fun loc (global_annot, sto, id, ty, init) -> unused_variable env used loc (id,ty)) s
 
 let unused_variables p =
   let fundef env loc fd =
@@ -259,7 +260,7 @@ let add_vars env vars (id,ty) =
     vars
 
 let non_stack_locals_stmt env vars s =
-  let decl vars loc (sto, id, ty, init) =
+  let decl vars loc (global_annot, sto, id, ty, init) =
     let vars = match init with
       | Some init -> non_stack_locals_init vars init
       | None -> vars in
@@ -359,7 +360,7 @@ and non_linear_cond_init vars env loc init =
   iter_over_init ~expr:(non_linear_cond_expr false vars env loc) init
 
 let non_linear_cond_stmt vars env s =
-  let decl loc (sto, id, ty, init) =
+  let decl loc (global_annot, sto, id, ty, init) =
     match init with
     | None -> ()
     | Some init -> non_linear_cond_init vars env loc init in

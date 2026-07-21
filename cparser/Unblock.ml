@@ -93,11 +93,11 @@ let process_compound_literal islocal env ty init =
     let ty' = remove_const env ty in
     let e = {edesc = EVar id; etyp = ty'} in
     local_variables :=
-      (Storage_default, id, ty', None) :: !local_variables;
+      (Some(RcAnnot.default_function_annot), Storage_default, id, ty', None) :: !local_variables;
     (local_initializer env e init [], e)
   end else begin
     global_variables :=
-      (Storage_static, id, ty, Some init) :: !global_variables;
+      (Some(RcAnnot.default_function_annot), Storage_static, id, ty, Some init) :: !global_variables;
     ([], {edesc = EVar id; etyp = ty})
   end
 
@@ -243,9 +243,9 @@ let new_scope_id () =
    The initializer, if any, is converted into assignments and
    prepended to [k]. *)
 
-let process_decl loc env ctx (sto, id, ty, optinit) k =
+let process_decl loc env ctx (global_annot, sto, id, ty, optinit) k =
   let ty' = remove_const env ty in
-  local_variables := (sto, id, ty', None) :: !local_variables;
+  local_variables := (global_annot, sto, id, ty', None) :: !local_variables;
   debug_var_decl ctx id;
   (* TODO: register the fact that id is declared in scope ctx *)
   match optinit with
@@ -260,7 +260,7 @@ let process_decl loc env ctx (sto, id, ty, optinit) k =
 
 let rec unblock_stmt env ctx ploc s =
   match s.sdesc with
-  | Sskip -> s
+  | Sskip | Sannot _ -> s
   | Sdo e ->
       add_lineno ctx ploc s.sloc
         {s with sdesc = Sdo(expand_expr true env e)}
@@ -272,17 +272,17 @@ let rec unblock_stmt env ctx ploc s =
         {s with sdesc = Sif(expand_expr true env e,
                             unblock_stmt env ctx s.sloc s1,
                             unblock_stmt env ctx s.sloc s2)}
-  | Swhile(e, s1) ->
+  | Swhile(sd, e, s1) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Swhile(expand_expr true env e,
+        {s with sdesc = Swhile(sd, expand_expr true env e,
                                unblock_stmt env ctx s.sloc s1)}
-  | Sdowhile(s1, e) ->
+  | Sdowhile(sd, s1, e) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sdowhile(unblock_stmt env ctx s.sloc s1,
+        {s with sdesc = Sdowhile(sd, unblock_stmt env ctx s.sloc s1,
                                  expand_expr true env e)}
-  | Sfor(s1, e, s2, s3) ->
+  | Sfor(sd, s1, e, s2, s3) ->
       add_lineno ctx ploc s.sloc
-        {s with sdesc = Sfor(unblock_stmt env ctx s.sloc s1,
+        {s with sdesc = Sfor(sd, unblock_stmt env ctx s.sloc s1,
                              expand_expr true env e,
                              unblock_stmt env ctx s.sloc s2,
                              unblock_stmt env ctx s.sloc s3)}
@@ -354,7 +354,7 @@ let unblock_fundef env f =
 
 (* Simplification of compound literals within a top-level declaration *)
 
-let unblock_decl env ((sto, id, ty, optinit) as d) =
+let unblock_decl env ((global_annot, sto, id, ty, optinit) as d) =
   match optinit with
   | None -> [d]
   | Some init ->
@@ -362,7 +362,7 @@ let unblock_decl env ((sto, id, ty, optinit) as d) =
       let init' = expand_init false env init in
       let decls = List.rev !global_variables in
       global_variables := [];
-      decls @ [(sto, id, ty, Some init')]
+      decls @ [(global_annot, sto, id, ty, Some init')]
 
 (* Unblocking and simplification for whole files.
    The environment is used for typedefs and composites only,
@@ -386,7 +386,7 @@ let rec unblock_glob env accu = function
           unblock_glob
             (Env.add_composite env id (composite_info_decl su attr))
             (g :: accu) gl
-      | Gcompositedef(su, id, attr, fl) ->
+      | Gcompositedef(_, su, id, attr, fl) ->
           unblock_glob
             (Env.add_composite env id (composite_info_def env su attr fl))
             (g :: accu) gl
@@ -403,5 +403,5 @@ let rec unblock_glob env accu = function
 
 let program p =
   next_scope_id := 0;
-  {gloc = no_loc; gdesc = Gdecl(Storage_extern, debug_id, debug_ty, None)} ::
+  {gloc = no_loc; gdesc = Gdecl(Some(RcAnnot.default_function_annot), Storage_extern, debug_id, debug_ty, None)} ::
   unblock_glob (Env.initial()) [] p

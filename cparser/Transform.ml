@@ -34,7 +34,7 @@ let get_temps () =
 
 let new_temp_var ?(name = "t") ty =
   let id = Env.fresh_ident name in
-  temporaries := (Storage_default, id, ty, None) :: !temporaries;
+  temporaries := (Some(RcAnnot.default_function_annot), Storage_default, id, ty, None) :: !temporaries;
   id
 
 let new_temp ?(name = "t") ty =
@@ -145,19 +145,19 @@ let expand_postincrdecr ~read ~write env ctx op l =
 let stmt ~expr ?(decl = fun env decl -> assert false) env s =
   let rec stm s =
   match s.sdesc with
-  | Sskip -> s
+  | Sskip | Sannot _ -> s
   | Sdo e ->
       {s with sdesc = Sdo(expr s.sloc env Effects e)}
   | Sseq(s1, s2) ->
       {s with sdesc = Sseq(stm s1, stm s2)}
   | Sif(e, s1, s2) ->
       {s with sdesc = Sif(expr s.sloc env Val e, stm s1, stm s2)}
-  | Swhile(e, s1) ->
-      {s with sdesc = Swhile(expr s.sloc env Val e, stm s1)}
-  | Sdowhile(s1, e) ->
-      {s with sdesc = Sdowhile(stm s1, expr s.sloc env Val e)}
-  | Sfor(s1, e, s2, s3) ->
-      {s with sdesc = Sfor(stm s1, expr s.sloc env Val e, stm s2, stm s3)}
+  | Swhile(sd, e, s1) ->
+      {s with sdesc = Swhile(sd, expr s.sloc env Val e, stm s1)}
+  | Sdowhile(sd, s1, e) ->
+      {s with sdesc = Sdowhile(sd, stm s1, expr s.sloc env Val e)}
+  | Sfor(sd, s1, e, s2, s3) ->
+      {s with sdesc = Sfor(sd, stm s1, expr s.sloc env Val e, stm s2, stm s3)}
   | Sbreak -> s
   | Scontinue -> s
   | Sswitch(e, s1) ->
@@ -205,7 +205,7 @@ let program
   | g :: gl ->
       let (desc', env') =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as d) ->
+        | Gdecl((global_annot, sto, id, ty, init) as d) ->
            (Gdecl(decl env g.gloc d), Env.add_ident env id sto ty)
         | Gfundef f ->
             (Gfundef(fundef env g.gloc f),
@@ -213,9 +213,9 @@ let program
         | Gcompositedecl(su, id, attr) ->
             (Gcompositedecl(su, id, attr),
              Env.add_composite env id (composite_info_decl su attr))
-        | Gcompositedef(su, id, attr, fl) ->
+        | Gcompositedef(a, su, id, attr, fl) ->
             let (attr', fl') = composite env  g.gloc su id attr fl in
-            (Gcompositedef(su, id, attr', fl'),
+            (Gcompositedef(a, su, id, attr', fl'),
              Env.add_composite env id (composite_info_def env su attr fl))
         | Gtypedef(id, ty) ->
             (Gtypedef(id, typedef env g.gloc id ty), Env.add_typedef env id ty)

@@ -130,10 +130,10 @@ Fixpoint simpl_stmt (cenv: compilenv) (s: statement) : res statement :=
       do s1' <- simpl_stmt cenv s1;
       do s2' <- simpl_stmt cenv s2;
       OK (Sifthenelse (simpl_expr cenv a) s1' s2')
-  | Sloop s1 s2 =>
+  | Sloop sd s1 s2 =>
       do s1' <- simpl_stmt cenv s1;
       do s2' <- simpl_stmt cenv s2;
-      OK (Sloop s1' s2')
+      OK (Sloop sd s1' s2')
   | Sbreak => OK Sbreak
   | Scontinue => OK Scontinue
   | Sreturn opta => OK (Sreturn (option_map (simpl_expr cenv) opta))
@@ -144,6 +144,7 @@ Fixpoint simpl_stmt (cenv: compilenv) (s: statement) : res statement :=
       do s' <- simpl_stmt cenv s;
       OK (Slabel lbl s')
   | Sgoto lbl => OK (Sgoto lbl)
+  | Sannot a => OK (Sannot a)
   end
 
 with simpl_lblstmt (cenv: compilenv) (ls: labeled_statements) : res labeled_statements :=
@@ -212,7 +213,7 @@ Fixpoint addr_taken_stmt (s: statement) : VSet.t :=
   | Ssequence s1 s2 => VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)
   | Sifthenelse a s1 s2 =>
       VSet.union (addr_taken_expr a) (VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2))
-  | Sloop s1 s2 => VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)
+  | Sloop _ s1 s2 => VSet.union (addr_taken_stmt s1) (addr_taken_stmt s2)
   | Sbreak => VSet.empty
   | Scontinue => VSet.empty
   | Sreturn None => VSet.empty
@@ -220,6 +221,7 @@ Fixpoint addr_taken_stmt (s: statement) : VSet.t :=
   | Sswitch a ls => VSet.union (addr_taken_expr a) (addr_taken_lblstmt ls)
   | Slabel lbl s => addr_taken_stmt s
   | Sgoto lbl => VSet.empty
+  | Sannot _ => VSet.empty
   end
 
 with addr_taken_lblstmt (ls: labeled_statements) : VSet.t :=

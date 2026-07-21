@@ -110,7 +110,8 @@ let field env f =
   { fld_name = f.fld_name;
     fld_typ = typ env f.fld_typ;
     fld_bitfield = f.fld_bitfield;
-    fld_anonymous = f.fld_anonymous;  }
+    fld_anonymous = f.fld_anonymous;
+    fld_annot = f.fld_annot  }
 
 let constant env = function
   | CEnum(id, v) -> CEnum(ident env id, v)
@@ -144,9 +145,10 @@ let optexp env = function
   | None -> None
   | Some a -> Some (exp env a)
 
-let decl env (sto, id, ty, int) =
+let decl env (global_annot, sto, id, ty, int) =
   let (id', env') = rename env id in
-  ((sto,
+  ((global_annot,
+    sto,
     id',
     typ env' ty,
     match int with None -> None | Some i -> Some(init env' i)),
@@ -162,10 +164,10 @@ and stmt_desc env = function
   | Sdo a -> Sdo (exp env a)
   | Sseq(s1, s2) -> Sseq(stmt env s1, stmt env s2)
   | Sif(a, s1, s2) -> Sif(exp env a, stmt env s1, stmt env s2)
-  | Swhile(a, s) -> Swhile(exp env a, stmt env s)
-  | Sdowhile(s, a) -> Sdowhile(stmt env s, exp env a)
-  | Sfor(a1, a2, a3, s) ->
-      Sfor(stmt env a1, exp env a2, stmt env a3, stmt env s)
+  | Swhile(sd, a, s) -> Swhile(sd, exp env a, stmt env s)
+  | Sdowhile(sd, s, a) -> Sdowhile(sd, stmt env s, exp env a)
+  | Sfor(sd, a1, a2, a3, s) ->
+      Sfor(sd, stmt env a1, exp env a2, stmt env a3, stmt env s)
   | Sbreak -> Sbreak
   | Scontinue -> Scontinue
   | Sswitch(a, s) -> Sswitch(exp env a, stmt env s)
@@ -179,6 +181,7 @@ and stmt_desc env = function
             List.map (asm_operand env) outputs,
             List.map (asm_operand env) inputs,
             flags)
+  | Sannot a -> Sannot a
 
 and stmt_or_decl env s =
   match s.sdesc with
@@ -200,6 +203,7 @@ let fundef env f =
       fd_inline = f.fd_inline;
       fd_name = name';
       fd_attrib = f.fd_attrib;
+      fd_annot = f.fd_annot;
       fd_ret = typ env0 f.fd_ret;
       fd_params = params';
       fd_vararg = f.fd_vararg;
@@ -225,8 +229,8 @@ and globdecl_desc env = function
   | Gcompositedecl(kind, id, attr) ->
       let (id', env') = rename env id in
       (Gcompositedecl(kind, id', attr), env')
-  | Gcompositedef(kind, id, attr, members) ->
-      (Gcompositedef(kind, ident env id, attr, List.map (field env) members),
+  | Gcompositedef(a, kind, id, attr, members) ->
+      (Gcompositedef(a, kind, ident env id, attr, List.map (field env) members),
        env)
   | Gtypedef(id, ty) ->
       let (id', env') = rename env id in
@@ -256,7 +260,7 @@ let rec reserve_public env = function
   | dcl :: rem ->
       let env' =
         match dcl.gdesc with
-        | Gdecl(sto, id, _, _) ->
+        | Gdecl(global_annot, sto, id, _, _) ->
             begin match sto with
             | Storage_default | Storage_extern -> enter_public env id
             | Storage_static -> env

@@ -302,7 +302,7 @@ let add_function (s, (res, args, va)) =
   env := env';
   idents := id :: !idents;
   decls :=
-    {gdesc = Gdecl(Storage_extern, id, ty, None); gloc = no_loc} :: !decls
+    {gdesc = Gdecl(Some(RcAnnot.default_function_annot), Storage_extern, id, ty, None); gloc = no_loc} :: !decls
 
 end
 

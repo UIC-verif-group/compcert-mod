@@ -48,8 +48,9 @@
   VAR_NAME TYPEDEF_NAME
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.encoding * int64 list * Cabs.loc> STRING_LITERAL
-%token<RcAnno.t * Cabs.loc> RCANNO
 %token<string * Cabs.loc> PRAGMA
+%token<int * Rc_annot.rc_attr> RC_ATTR
+
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
   ANDAND BARBAR PLUS MINUS STAR TILDE BANG SLASH PERCENT HAT BAR QUESTION
   COLON AND MUL_ASSIGN DIV_ASSIGN MOD_ASSIGN ADD_ASSIGN SUB_ASSIGN LEFT_ASSIGN
@@ -423,6 +424,8 @@ declaration(phantom):
 | declaration_specifiers_typedef               typedef_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
+| idx = rc_attributes declaration_specifiers(declaration(phantom)) init_declarator_list?    SEMICOLON
+    { !set_annot_type idx FunctionAnnot }
 
 init_declarator_list:
 | init_declarator
@@ -524,6 +527,9 @@ struct_or_union_specifier:
 | struct_or_union attribute_specifier_list other_identifier? LBRACE struct_declaration_list RBRACE
 | struct_or_union attribute_specifier_list other_identifier
     {}
+| struct_or_union attribute_specifier_list idx = rc_attributes other_identifier? LBRACE struct_declaration_list RBRACE
+| struct_or_union attribute_specifier_list idx = rc_attributes other_identifier
+    { !set_annot_type idx StructAnnot }
 
 struct_or_union:
 | STRUCT
@@ -539,6 +545,8 @@ struct_declaration:
 | specifier_qualifier_list(struct_declaration) struct_declarator_list? SEMICOLON
 | static_assert_declaration
     {}
+| idx = rc_attributes specifier_qualifier_list(struct_declaration) struct_declarator_list? SEMICOLON
+    { !set_annot_type idx MemberAnnot }
 
 (* As in the standard, except it also encodes the constraint described
    in the comment above [declaration_specifiers]. *)
@@ -557,6 +565,8 @@ struct_declarator_list:
 | struct_declarator
 | struct_declarator_list COMMA struct_declarator
     {}
+| struct_declarator_list COMMA idx = rc_attributes struct_declarator
+    { !set_annot_type idx MemberAnnot }
 
 struct_declarator:
 | declarator
@@ -603,7 +613,6 @@ attribute_specifier:
 | PACKED LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN argument_expression_list RPAREN
 | ALIGNAS LPAREN type_name RPAREN
-| RCANNO
     {}
 
 gcc_attribute_list:
@@ -705,10 +714,6 @@ direct_declarator:
     { match snd x with
       | Decl_ident -> (fst x, Decl_other)
       | _ -> x }
-| x = direct_declarator LBRACK type_qualifier_list? STAR RBRACK
-    { match snd x with
-      | Decl_ident -> (fst x, Decl_other)
-      | _ -> x }
 | x = direct_declarator LPAREN ctx = context_parameter_type_list RPAREN
     { match snd x with
       | Decl_ident -> (fst x, Decl_fun ctx)
@@ -781,7 +786,6 @@ direct_abstract_declarator:
 | direct_abstract_declarator? LBRACK type_qualifier_list? optional(assignment_expression, RBRACK)
 | direct_abstract_declarator? LBRACK STATIC type_qualifier_list? assignment_expression RBRACK
 | direct_abstract_declarator? LBRACK type_qualifier_list STATIC assignment_expression RBRACK
-| direct_abstract_declarator? LBRACK type_qualifier_list? STAR RBRACK
 | ioption(direct_abstract_declarator) LPAREN context_parameter_type_list? RPAREN
     {}
 
@@ -817,6 +821,16 @@ statement:
 | jump_statement
 | asm_statement
     {}
+| idx = rc_attributes iteration_statement
+    { !set_annot_type idx LoopAnnot }
+| idx = rc_attributes labeled_statement
+| idx = rc_attributes compound_statement
+| idx = rc_attributes expression_statement
+| idx = rc_attributes selection_statement
+| idx = rc_attributes iteration_statement
+| idx = rc_attributes jump_statement
+| idx = rc_attributes asm_statement
+    { !set_annot_type idx InlineAnnot }
 
 labeled_statement:
 | other_identifier COLON statement
@@ -836,7 +850,6 @@ block_item:
 | declaration(block_item)
 | statement
 | PRAGMA
-| RCANNO SEMICOLON
     {}
 
 expression_statement:
@@ -963,3 +976,11 @@ function_definition1:
 function_definition:
 | ctx = function_definition1 compound_statement
     { ctx () }
+| idx = rc_attributes ctx = function_definition1 compound_statement
+    { !set_annot_type idx FunctionAnnot; ctx () }
+
+rc_attributes:
+| a = RC_ATTR
+    { fst a }
+| a = RC_ATTR rc_attributes
+    { fst a }

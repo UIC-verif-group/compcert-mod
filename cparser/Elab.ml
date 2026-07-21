@@ -19,6 +19,7 @@
 (* Numbered references are to sections of the ISO C99 standard *)
 
 open Machine
+open Location
 open Cabs
 open C
 open Diagnostics
@@ -100,7 +101,7 @@ let emit_elab ?(debuginfo = true) ?(linkage = false) env loc td =
   top_declarations := dec :: !top_declarations;
   if linkage then begin
     match td with
-    | Gdecl(sto, id, ty, init) ->
+    | Gdecl(global_annot, sto, id, ty, init) ->
         top_environment := Env.add_ident !top_environment id sto ty
     | Gfundef f ->
         top_environment :=
@@ -826,22 +827,22 @@ let rec elab_specifier ?(only = false) loc env specifier =
         let (id', info) = wrap Env.lookup_typedef loc env id in
         simple (TNamed(id', []))
 
-    | [Cabs.Tstruct_union(STRUCT, id, optmembers, a)] ->
+    | [Cabs.Tstruct_union(annot, STRUCT, id, optmembers, a)] ->
         let a' =
           add_attributes (get_definition_attrs optmembers)
                          (elab_attributes env a) in
         let (id', env') =
-          elab_struct_or_union only Struct loc id optmembers a' env in
+          elab_struct_or_union only annot Struct loc id optmembers a' env in
         let ty =  TStruct(id', !attr) in
         restrict_check ty;
         (!sto, !inline, !noreturn, !typedef, ty, env')
 
-    | [Cabs.Tstruct_union(UNION, id, optmembers, a)] ->
+    | [Cabs.Tstruct_union(annot, UNION, id, optmembers, a)] ->
         let a' =
           add_attributes (get_definition_attrs optmembers)
                          (elab_attributes env a) in
         let (id', env') =
-          elab_struct_or_union only Union loc id optmembers a' env in
+          elab_struct_or_union only annot Union loc id optmembers a' env in
         let ty =  TUnion(id', !attr) in
         restrict_check ty;
         (!sto, !inline, !noreturn, !typedef, ty, env')
@@ -1045,13 +1046,13 @@ and elab_field_group env = function
 | Field_group (spec, fieldlist, loc) ->
 
   let fieldlist = List.map
-    (function (None, x) -> (Name ("", JUSTBASE, [], loc), x)
-            | (Some n, x) -> (n, x))
+    (function (a, (None, x)) -> (a, Name ("", JUSTBASE, [], loc), x)
+            | (a, (Some n, x)) -> (a, n, x))
     fieldlist
   in
 
   let ((names, env'), sto) =
-    elab_name_group loc env  (spec, List.map fst fieldlist) in
+    elab_name_group loc env  (spec, List.map (fun (_, n, _) -> n) fieldlist) in
 
   if sto <> Storage_default then
     (* This should actually never be triggered, catched by pre-parser *)
@@ -1060,7 +1061,7 @@ and elab_field_group env = function
       (* This should actually never be triggered, empty structs are captured earlier *)
       warning loc Missing_declarations "declaration does not declare anything";
 
-  let elab_bitfield env (Name (_, _, _, loc), optbitsize) (id, ty) =
+  let elab_bitfield env (a, Name (_, _, _, loc), optbitsize) (id, ty) =
     let optbitsize',env' =
       match optbitsize with
       | None -> None,env
@@ -1095,7 +1096,7 @@ and elab_field_group env = function
       None, env'
     end else
       Some { fld_name = id; fld_typ = ty; fld_bitfield = optbitsize';
-             fld_anonymous = id = "" && anon_composite},
+             fld_anonymous = id = "" && anon_composite; fld_annot = a },
       env'
   in
   (mmap2_filter elab_bitfield env' fieldlist names)
@@ -1171,7 +1172,7 @@ and elab_struct_or_union_info kind loc env members attrs =
   (* Final result *)
   (composite_info_def env' kind attrs m, env')
 
-and elab_struct_or_union only kind loc tag optmembers attrs env =
+and elab_struct_or_union only annot kind loc tag optmembers attrs env =
   let warn_attrs () =
     if attrs <> [] then
       warning loc Ignored_attributes "attribute declaration must precede definition" in
@@ -1202,7 +1203,7 @@ and elab_struct_or_union only kind loc tag optmembers attrs env =
       (* finishing the definition of an incomplete struct or union *)
       let (ci', env') = elab_struct_or_union_info kind loc env members attrs in
       (* Emit a global definition for it *)
-      emit_elab env' loc (Gcompositedef(kind, tag', attrs, ci'.Env.ci_members));
+      emit_elab env' loc (Gcompositedef(annot, kind, tag', attrs, ci'.Env.ci_members));
       (* Replace infos but keep same ident *)
       (tag', Env.add_composite env' tag' ci')
   | Some(tag', {Env.ci_sizeof = Some _}), Some _
@@ -1229,7 +1230,7 @@ and elab_struct_or_union only kind loc tag optmembers attrs env =
       let (ci2, env'') =
         elab_struct_or_union_info kind loc env' members attrs in
       (* emit a definition *)
-      emit_elab env'' loc (Gcompositedef(kind, tag', attrs, ci2.Env.ci_members));
+      emit_elab env'' loc (Gcompositedef(annot, kind, tag', attrs, ci2.Env.ci_members));
       (* Replace infos but keep same ident *)
       (tag', Env.add_composite env'' tag' ci2)
 
@@ -1994,7 +1995,7 @@ let elab_expr ctx loc env a =
             let (id, sto, env, ty, linkage) =
               enter_or_refine_ident true loc env n Storage_extern ty in
             (* Emit an extern declaration for it *)
-            emit_elab ~linkage env loc (Gdecl(sto, id, ty, None));
+            emit_elab ~linkage env loc (Gdecl(Some(RcAnnot.default_function_annot), sto, id, ty, None));
             { edesc = EVar id; etyp = ty },env
         | _ -> elab env a1 in
       let (bl, env) = mmap elab env al in
@@ -2604,7 +2605,7 @@ let enter_typedef loc env sto (s, ty, init) =
     emit_elab env loc (Gtypedef(id, ty));
     env'
 
-let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
+let enter_decdef annot local nonstatic_inline loc sto (decls, env) (s, ty, init) =
   let isfun = is_function_type env ty in
   let has_init = init <> NO_INIT in
   if sto = Storage_register && has_std_alignas env ty then
@@ -2661,10 +2662,10 @@ let enter_decdef local nonstatic_inline loc sto (decls, env) (s, ty, init) =
     warning loc Static_in_inline "non-constant static local variable '%s' in inline function may be different in different files" s;
   if local && not isfun && sto' <> Storage_extern && sto' <> Storage_static then
     (* Local definition *)
-    ((sto', id, ty', init') :: decls, env2)
+    ((annot, sto', id, ty', init') :: decls, env2)
   else begin
     (* Global definition *)
-    emit_elab ~linkage env2 loc (Gdecl(sto', id, ty', init'));
+    emit_elab ~linkage env2 loc (Gdecl(annot, sto', id, ty', init'));
     (* Make sure the initializer is constant. *)
     begin match init' with
       | Some i when not (Ceval.is_constant_init env2 i) ->
@@ -2707,7 +2708,7 @@ let elab_KR_function_parameters env params defs loc =
   in
   (* Extract names and types from the declarations *)
   let elab_param_def env = function
-  | DECDEF((spec', name_init_list), loc') ->
+  | DECDEF(annot, (spec', name_init_list), loc') ->
       let name_list = List.map extract_name name_init_list in
       if name_list = [] then
         error loc' "declaration does not declare a parameter";
@@ -2754,7 +2755,7 @@ let elab_KR_function_parameters env params defs loc =
           let id_var = Env.fresh_ident p in
           let init = Init_single { edesc = EVar id_param; etyp = ty_param } in
           match_params ((id_param, ty_param) :: params')
-                       ((Storage_default, id_var, ty_var, Some init)
+                       ((Some(RcAnnot.default_function_annot), Storage_default, id_var, ty_var, Some init)
                                                            :: extra_decls)
                        ps
         end
@@ -2779,7 +2780,7 @@ let inherit_vararg env s sto ty =
 
 (* Function definitions *)
 
-let elab_fundef genv spec name defs body loc =
+let elab_fundef genv spec name annot defs body loc =
   (* We maintain two environments:
      - genv is the "global", file-scope environment.  It is enriched
        with the declaration of the function, and also with
@@ -2872,14 +2873,14 @@ let elab_fundef genv spec name defs body loc =
   let lenv =
     List.fold_left add_param lenv params in
   let lenv =
-    List.fold_left (fun e (sto, id, ty, init) -> Env.add_ident e id sto ty)
+    List.fold_left (fun e (global_annot, sto, id, ty, init) -> Env.add_ident e id sto ty)
                    lenv extra_decls in
   (* Define "__func__" and enter it in the local environment *)
   let (func_ty, func_init) = __func__type_and_init s in
   let (func_id, _, lenv, func_ty, _) =
     enter_or_refine_ident true loc lenv "__func__" Storage_static func_ty in
   emit_elab ~debuginfo:false lenv loc
-                  (Gdecl(Storage_static, func_id, func_ty, Some func_init));
+                  (Gdecl(Some(RcAnnot.default_function_annot), Storage_static, func_id, func_ty, Some func_init));
   (* Elaborate function body *)
   let body1 = !elab_funbody_f ty_ret vararg (inline && sto <> Storage_static)
                               lenv body in
@@ -2929,6 +2930,7 @@ let elab_fundef genv spec name defs body loc =
       fd_name = fun_id;
       fd_attrib = if noret then add_attributes [Attr("noreturn",[])] attr
                            else attr;
+      fd_annot = annot;
       fd_ret = ty_ret;
       fd_params = params;
       fd_vararg = vararg;
@@ -2938,7 +2940,7 @@ let elab_fundef genv spec name defs body loc =
   genv
 
 (* Definitions *)
-let elab_decdef (for_loop: bool) (local: bool) (nonstatic_inline: bool)
+let elab_decdef annot (for_loop: bool) (local: bool) (nonstatic_inline: bool)
                 (env: Env.t) ((spec, namelist): Cabs.init_name_group)
                 (loc: Cabs.loc) : decl list * Env.t =
   let (sto, inl, noret, tydef, bty, env') =
@@ -2979,7 +2981,7 @@ let elab_decdef (for_loop: bool) (local: bool) (nonstatic_inline: bool)
     if tydef then
       (decls, enter_typedef loc env1 sto decl)
     else
-      enter_decdef local nonstatic_inline loc sto (decls, env1) decl
+      enter_decdef annot local nonstatic_inline loc sto (decls, env1) decl
   in
   let (decls, env') = List.fold_left elab_one_name ([],env') namelist in
   (List.rev decls, env')
@@ -2990,15 +2992,15 @@ let elab_definition (for_loop: bool) (local: bool) (nonstatic_inline: bool)
   match def with
   (* "int f(int x) { ... }" *)
   (* "int f(x, y) double y; { ... }" *)
-  | FUNDEF(spec, name, defs, body, loc) ->
+  | FUNDEF(spec, name, annot, defs, body, loc) ->
       (* This should actually never be triggered, catched by pre-parser *)
       if local then error loc "function definition is not allowed here";
-      let env1 = elab_fundef env spec name defs body loc in
+      let env1 = elab_fundef env spec name annot defs body loc in
       ([], env1)
 
   (* "int x = 12, y[10], *z" *)
-  | DECDEF(init_name_group, loc) ->
-    elab_decdef for_loop local nonstatic_inline env init_name_group loc
+  | DECDEF(annot, init_name_group, loc) ->
+    elab_decdef annot for_loop local nonstatic_inline env init_name_group loc
 
   (* pragma *)
   | PRAGMA(s, loc) ->
@@ -3029,9 +3031,9 @@ let stmt_labels stmt =
   | BLOCK(b, _) -> do_block b
   | If(_, s1, Some s2, _) -> do_stmt s1; do_stmt s2
   | If(_, s1, None, _) -> do_stmt s1
-  | WHILE(_, s1, _) -> do_stmt s1
-  | DOWHILE(_, s1, _) -> do_stmt s1
-  | FOR(_, _, _, s1, _) -> do_stmt s1
+  | WHILE(_, _, s1, _) -> do_stmt s1
+  | DOWHILE(_, _, s1, _) -> do_stmt s1
+  | FOR(_, _, _, _, s1, _) -> do_stmt s1
   | SWITCH(_, s1, _) -> do_stmt s1
   | CASE(_, s1, _) -> do_stmt s1
   | DEFAULT(s1, _) -> do_stmt s1
@@ -3061,9 +3063,9 @@ let check_switch_cases switch_body =
     | Sdo _ -> ()
     | Sseq(s1, s2) -> check s1; check s2
     | Sif(_, s1, s2) -> check s1; check s2
-    | Swhile(_, s1) -> check s1
-    | Sdowhile(s1, _) -> check s1
-    | Sfor(s1, _, s2, s3) -> check s1; check s2; check s3
+    | Swhile(_, _, s1) -> check s1
+    | Sdowhile(_, s1, _) -> check s1
+    | Sfor(_, s1, _, s2, s3) -> check s1; check s2; check s3
     | Sbreak -> ()
     | Scontinue -> ()
     | Sswitch(_, _) -> () (* already checked during elaboration of this switch *)
@@ -3087,6 +3089,7 @@ let check_switch_cases switch_body =
     | Sblock sl -> List.iter check sl
     | Sdecl _ -> ()
     | Sasm _ -> ()
+    | Sannot _ -> ()
   in check switch_body
 
 (* Elaboration of statements *)
@@ -3147,23 +3150,23 @@ let rec elab_stmt env ctx s =
 
 (* 6.8.5 Iterative statements *)
 
-  | WHILE(a, s1, loc) ->
+  | WHILE(sd, a, s1, loc) ->
       let a',env' = elab_expr ctx loc (Env.new_scope env) a in
       if not (is_scalar_type env' a'.etyp) then
         error loc "controlling expression of 'while' does not have scalar type (%a invalid)"
           (print_typ env') a'.etyp;
       let s1' = elab_stmt_new_scope env' (ctx_loop ctx) s1 in
-      { sdesc = Swhile(a', s1'); sloc = elab_loc loc },env
+      { sdesc = Swhile(sd, a', s1'); sloc = elab_loc loc },env
 
-  | DOWHILE(a, s1, loc) ->
+  | DOWHILE(sd, a, s1, loc) ->
       let s1' = elab_stmt_new_scope env (ctx_loop ctx) s1 in
       let a',env' = elab_expr ctx loc (Env.new_scope env) a in
       if not (is_scalar_type env' a'.etyp) then
         error loc "controlling expression of 'while' does not have scalar type (%a invalid)"
           (print_typ env') a'.etyp;
-      { sdesc = Sdowhile(s1', a'); sloc = elab_loc loc },env
+      { sdesc = Sdowhile(sd, s1', a'); sloc = elab_loc loc },env
 
-  | FOR(fc, a2, a3, s1, loc) ->
+  | FOR(sd, fc, a2, a3, s1, loc) ->
       let env' = Env.new_scope env in
       let (a1', env_decls, decls') =
         match fc with
@@ -3188,7 +3191,7 @@ let rec elab_stmt env ctx s =
         error loc "controlling expression of 'for' does not have scalar type (%a invalid)" (print_typ env) a2'.etyp;
       let a3',env_for = elab_for_expr ctx loc env_test a3 in
       let s1' = elab_stmt_new_scope env_for (ctx_loop ctx) s1 in
-      let sfor = { sdesc = Sfor(a1', a2', a3', s1'); sloc = elab_loc loc } in
+      let sfor = { sdesc = Sfor(sd, a1', a2', a3', s1'); sloc = elab_loc loc } in
       begin match decls' with
       | None -> sfor,env
       | Some sl -> { sdesc = Sblock (sl @ [sfor]); sloc = elab_loc loc },env
@@ -3255,6 +3258,10 @@ let rec elab_stmt env ctx s =
   | NOP loc ->
       { sdesc = Sskip; sloc = elab_loc loc },env
 
+(* RefinedC annotations *)
+  | ANNOT(a, loc) ->
+      { sdesc = Sannot a; sloc = elab_loc loc },env
+
 (* Traditional extensions *)
   | ASM(cv_specs, wide, chars, outputs, inputs, flags, loc) ->
       let a = elab_cvspecs env cv_specs in
@@ -3291,7 +3298,7 @@ and elab_block_body env ctx sl =
       let (dcl, env') =
         elab_definition false true ctx.ctx_nonstatic_inline env def in
       let loc = elab_loc (Cabshelper.get_definitionloc def) in
-      let dcl = List.map (fun ((sto,id,ty,_) as d) ->
+      let dcl = List.map (fun ((_, sto,id,ty,_) as d) ->
         Debug.insert_local_declaration sto id ty loc;
         {sdesc = Sdecl d; sloc = loc}) dcl in
       let sl1',env' = elab_block_body env' ctx sl1 in

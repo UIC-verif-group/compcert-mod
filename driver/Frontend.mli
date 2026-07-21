@@ -14,6 +14,9 @@
 val preprocess: string -> string -> unit
   (** From C to preprocessed C *)
 
+val preprocessC: string -> string -> unit
+  (** From C to preprocessed C, keep comments *)
+
 val parse_c_file: string -> string -> Csyntax.coq_function Ctypes.program
   (** From preprocessed C to Csyntax *)
 

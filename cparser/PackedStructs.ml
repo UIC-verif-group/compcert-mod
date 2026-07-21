@@ -362,8 +362,8 @@ let transf_init loc env i =
 
 (* Declarations *)
 
-let transf_decl loc env (sto, id, ty, init_opt) =
-  (sto, id, ty,
+let transf_decl loc env (global_annot, sto, id, ty, init_opt) =
+  (global_annot, sto, id, ty,
    match init_opt with
    | None -> None
    | Some i -> Some (transf_init loc env i))
@@ -374,7 +374,7 @@ let rec transf_globdecls env accu = function
   | [] -> List.rev accu
   | g :: gl ->
       match g.gdesc with
-      | Gdecl((sto, id, ty, init) as d) ->
+      | Gdecl((global_annot, sto, id, ty, init) as d) ->
           transf_globdecls
             (Env.add_ident env id sto ty)
             ({g with gdesc = Gdecl(transf_decl g.gloc env d)} :: accu)
@@ -393,11 +393,11 @@ let rec transf_globdecls env accu = function
             (Env.add_composite env id (composite_info_decl su attr'))
             ({g with gdesc = Gcompositedecl(su, id, attr')} :: accu)
             gl
-      | Gcompositedef(su, id, attr, fl) ->
+      | Gcompositedef(a, su, id, attr, fl) ->
           let (attr', fl') = transf_composite g.gloc env su id attr fl in
           transf_globdecls
             (Env.add_composite env id (composite_info_def env su attr' fl'))
-            ({g with gdesc = Gcompositedef(su, id, attr', fl')} :: accu)
+            ({g with gdesc = Gcompositedef(a, su, id, attr', fl')} :: accu)
             gl
       | Gtypedef(id, ty) ->
           transf_globdecls

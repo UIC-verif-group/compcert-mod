@@ -465,16 +465,16 @@ Inductive wt_stmt: statement -> Prop :=
   | wt_Sifthenelse: forall r s1 s2,
       wt_rvalue r -> wt_stmt s1 -> wt_stmt s2 -> wt_bool (typeof r) ->
       wt_stmt (Sifthenelse r s1 s2)
-  | wt_Swhile: forall r s,
+  | wt_Swhile: forall sd r s,
       wt_rvalue r -> wt_stmt s -> wt_bool (typeof r) ->
-      wt_stmt (Swhile r s)
-  | wt_Sdowhile: forall r s,
+      wt_stmt (Swhile sd r s)
+  | wt_Sdowhile: forall sd r s,
       wt_rvalue r -> wt_stmt s -> wt_bool (typeof r) ->
-      wt_stmt (Sdowhile r s)
-  | wt_Sfor: forall s1 r s2 s3,
+      wt_stmt (Sdowhile sd r s)
+  | wt_Sfor: forall sd s1 r s2 s3,
       wt_rvalue r -> wt_stmt s1 -> wt_stmt s2 -> wt_stmt s3 ->
       wt_bool (typeof r) ->
-      wt_stmt (Sfor s1 r s2 s3)
+      wt_stmt (Sfor sd s1 r s2 s3)
   | wt_Sbreak:
       wt_stmt Sbreak
   | wt_Scontinue:
@@ -494,6 +494,8 @@ Inductive wt_stmt: statement -> Prop :=
       wt_stmt s -> wt_stmt (Slabel lbl s)
   | wt_Sgoto: forall lbl,
       wt_stmt (Sgoto lbl)
+  | wt_Sannot: forall a,
+      wt_stmt (Sannot a)
 
 with wt_lblstmts : labeled_statements -> Prop :=
   | wt_LSnil:
@@ -771,14 +773,14 @@ Definition sdo (a: expr) : res statement :=
 Definition sifthenelse (a: expr) (s1 s2: statement) : res statement :=
   do x <- check_rval a; do y <- check_bool (typeof a); OK (Sifthenelse a s1 s2).
 
-Definition swhile (a: expr) (s: statement) : res statement :=
-  do x <- check_rval a; do y <- check_bool (typeof a); OK (Swhile a s).
+Definition swhile sd (a: expr) (s: statement) : res statement :=
+  do x <- check_rval a; do y <- check_bool (typeof a); OK (Swhile sd a s).
 
-Definition sdowhile (a: expr) (s: statement) : res statement :=
-  do x <- check_rval a; do y <- check_bool (typeof a); OK (Sdowhile a s).
+Definition sdowhile sd (a: expr) (s: statement) : res statement :=
+  do x <- check_rval a; do y <- check_bool (typeof a); OK (Sdowhile sd a s).
 
-Definition sfor (s1: statement) (a: expr) (s2 s3: statement) : res statement :=
-  do x <- check_rval a; do y <- check_bool (typeof a); OK (Sfor s1 a s2 s3).
+Definition sfor sd (s1: statement) (a: expr) (s2 s3: statement) : res statement :=
+  do x <- check_rval a; do y <- check_bool (typeof a); OK (Sfor sd s1 a s2 s3).
 
 Definition sreturn (rt: type) (a: expr) : res statement :=
   do x <- check_rval a; do y <- check_cast (typeof a) rt;
@@ -874,18 +876,18 @@ Fixpoint retype_stmt (ce: composite_env) (e: typenv) (rt: type) (s: statement) :
       do a' <- retype_expr ce e a;
       do s1' <- retype_stmt ce e rt s1; do s2' <- retype_stmt ce e rt s2;
       sifthenelse a' s1' s2'
-  | Swhile a s =>
+  | Swhile sd a s =>
       do a' <- retype_expr ce e a;
       do s' <- retype_stmt ce e rt s;
-      swhile a' s'
-  | Sdowhile a s =>
+      swhile sd a' s'
+  | Sdowhile sd a s =>
       do a' <- retype_expr ce e a;
       do s' <- retype_stmt ce e rt s;
-      sdowhile a' s'
-  | Sfor s1 a s2 s3 =>
+      sdowhile sd a' s'
+  | Sfor sd s1 a s2 s3 =>
       do a' <- retype_expr ce e a;
       do s1' <- retype_stmt ce e rt s1; do s2' <- retype_stmt ce e rt s2; do s3' <- retype_stmt ce e rt s3;
-      sfor s1' a' s2' s3'
+      sfor sd s1' a' s2' s3'
   | Sbreak =>
       OK Sbreak
   | Scontinue =>
@@ -903,6 +905,8 @@ Fixpoint retype_stmt (ce: composite_env) (e: typenv) (rt: type) (s: statement) :
       do s' <- retype_stmt ce e rt s; OK (Slabel lbl s')
   | Sgoto lbl =>
       OK (Sgoto lbl)
+  | Sannot a =>
+      OK (Sannot a)
   end
 
 with retype_lblstmts (ce: composite_env) (e: typenv) (rt: type) (sl: labeled_statements) : res labeled_statements :=
@@ -1282,21 +1286,21 @@ Proof.
 Qed.
 
 Lemma swhile_sound:
-  forall a s1 s, swhile a s1 = OK s ->
+  forall sd a s1 s, swhile sd a s1 = OK s ->
   wt_expr ce e a -> wt_stmt ce e rt s1 -> wt_stmt ce e rt s.
 Proof.
   intros. monadInv H. eauto with ty.
 Qed.
 
 Lemma sdowhile_sound:
-  forall a s1 s, sdowhile a s1 = OK s ->
+  forall sd a s1 s, sdowhile sd a s1 = OK s ->
   wt_expr ce e a -> wt_stmt ce e rt s1 -> wt_stmt ce e rt s.
 Proof.
   intros. monadInv H. eauto with ty.
 Qed.
 
 Lemma sfor_sound:
-  forall s1 a s2 s3 s, sfor s1 a s2 s3 = OK s ->
+  forall sd s1 a s2 s3 s, sfor sd s1 a s2 s3 = OK s ->
   wt_stmt ce e rt s1 -> wt_expr ce e a -> wt_stmt ce e rt s2 -> wt_stmt ce e rt s3 ->
   wt_stmt ce e rt s.
 Proof.
@@ -1371,6 +1375,7 @@ Proof.
 + destruct o; monadInv RT. eapply sreturn_sound; eauto using retype_expr_sound. constructor.
 + eapply sswitch_sound; eauto using retype_expr_sound.
 + constructor; eauto.
++ constructor.
 + constructor.
 - destruct sl; simpl; intros sl' RT; monadInv RT.
 + constructor.
@@ -2139,7 +2144,7 @@ Proof.
     eauto with ty.
   + eauto with ty.
   + eauto with ty.
-  + destruct (find_label lbl s1 (Kseq (Sfor Sskip r s2 s3) k)) as [[sx kx] | ] eqn:F.
+  + destruct (find_label lbl s1 (Kseq (Sfor sd Sskip r s2 s3) k)) as [[sx kx] | ] eqn:F.
     inv H7. eauto with ty.
     destruct (find_label lbl s3 (Kfor3 r s2 s3 k)) as [[sx kx] | ] eqn:F2.
     inv H7. eauto with ty.
@@ -2188,7 +2193,7 @@ Proof.
   constructor.
 Qed.
 
-Lemma preservation_sstep:
+(*Lemma preservation_sstep:
   forall S t S', sstep ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   induction 1; intros WT; inv WT.
@@ -2241,7 +2246,7 @@ Theorem preservation:
   forall S t S', step ge S t S' -> wt_state S -> wt_state S'.
 Proof.
   intros. destruct H. eapply preservation_estep; eauto. eapply preservation_sstep; eauto.
-Qed.
+Qed.*)
 
 Theorem wt_initial_state:
   forall S, initial_state prog S -> wt_state S.

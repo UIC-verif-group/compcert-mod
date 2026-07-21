@@ -75,7 +75,7 @@ and add_init = function
   | Init_struct(id, il) -> addref id; List.iter (fun (_, i) -> add_init i) il
   | Init_union(id, _, i) -> addref id; add_init i
 
-let add_decl (sto, id, ty, init) =
+let add_decl (global_annot, sto, id, ty, init) =
   add_typ ty;
   match init with None -> () | Some i -> add_init i
 
@@ -87,9 +87,9 @@ let rec add_stmt s =
   | Sdo e -> add_exp e
   | Sseq(s1, s2) -> add_stmt s1; add_stmt s2
   | Sif(e, s1, s2) -> add_exp e; add_stmt s1; add_stmt s2
-  | Swhile(e, s1) -> add_exp e; add_stmt s1
-  | Sdowhile(s1, e) -> add_stmt s1; add_exp e
-  | Sfor(e1, e2, e3, s1) -> add_stmt e1; add_exp e2; add_stmt e3; add_stmt s1
+  | Swhile(_, e, s1) -> add_exp e; add_stmt s1
+  | Sdowhile(_, s1, e) -> add_stmt s1; add_exp e
+  | Sfor(_, e1, e2, e3, s1) -> add_stmt e1; add_exp e2; add_stmt e3; add_stmt s1
   | Sbreak -> ()
   | Scontinue -> ()
   | Sswitch(e, s1) -> add_exp e; add_stmt s1
@@ -104,6 +104,7 @@ let rec add_stmt s =
   | Sasm(attr, template, outputs, inputs, flags) ->
       List.iter add_asm_operand outputs;
       List.iter add_asm_operand inputs
+  | Sannot _ -> ()
 
 let add_fundef f =
   add_typ f.fd_ret;
@@ -126,7 +127,7 @@ let add_enum e =
    - Declaration of variables with default storage.
 *)
 
-let visible_decl (sto, id, ty, init) =
+let visible_decl (global_annot, sto, id, ty, init) =
   sto = Storage_default &&
   match ty with TFun _ -> false | _ -> true
 
@@ -156,7 +157,7 @@ let rec add_needed_globdecls accu = function
   | [] -> accu
   | g :: rem ->
       match g.gdesc with
-      | Gdecl((sto, id, ty, init) as decl) ->
+      | Gdecl((global_annot, sto, id, ty, init) as decl) ->
           if needed id
           then (add_decl decl; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
@@ -164,7 +165,7 @@ let rec add_needed_globdecls accu = function
           if needed f.fd_name
           then (add_fundef f; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
-      | Gcompositedef(_, id, _, flds) ->
+      | Gcompositedef(_, _, id, _, flds) ->
           if needed id
           then (List.iter add_field flds; add_needed_globdecls accu rem)
           else add_needed_globdecls (g :: accu) rem
@@ -191,7 +192,7 @@ let saturate p =
 (* Remove unreferenced definitions *)
 
 let remove_unused_debug =  function
-  | Gdecl (_,id,_,_) ->  Debug.remove_unused id
+  | Gdecl (_,_,id,_,_) ->  Debug.remove_unused id
   | Gfundef f -> Debug.remove_unused_function f.fd_name
   | _ -> ()
 
@@ -200,10 +201,10 @@ let rec simpl_globdecls accu = function
   | g :: rem ->
       let need =
         match g.gdesc with
-        | Gdecl((sto, id, ty, init) as decl) -> visible_decl decl || needed id
+        | Gdecl((global_annot, sto, id, ty, init) as decl) -> visible_decl decl || needed id
         | Gfundef f -> visible_fundef f || needed f.fd_name
         | Gcompositedecl(_, id, _) -> needed id
-        | Gcompositedef(_, id, _, flds) -> needed id
+        | Gcompositedef(_, _, id, _, flds) -> needed id
         | Gtypedef(id, ty) -> needed id
         | Genumdef(id, _, enu) ->
             needed id || List.exists (fun (id, _, _) -> needed id) enu

@@ -171,10 +171,10 @@ let rec print_stmt p s =
               print_expr e
               print_stmt s1
               print_stmt s2
-  | Sloop(s1, Sskip) ->
+  | Sloop(_, s1, Sskip) ->
       fprintf p "@[<v 2>while (1) {@ %a@;<0 -2>}@]"
               print_stmt s1
-  | Sloop(s1, s2) ->
+  | Sloop(_, s1, s2) ->
       fprintf p "@[<v 2>for (@[<hv 0>;@ 1;@ %a) {@]@ %a@;<0 -2>}@]"
               print_stmt_for s2
               print_stmt s1
@@ -194,6 +194,9 @@ let rec print_stmt p s =
       fprintf p "%s:@ %a" (extern_atom lbl) print_stmt s1
   | Sgoto lbl ->
       fprintf p "goto %s;" (extern_atom lbl)
+  | Sannot _ ->
+      fprintf p "/*annotation*/;"
+
 
 and print_cases p cases =
   match cases with

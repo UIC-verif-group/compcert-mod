@@ -68,6 +68,8 @@
 /lib/Tokenize.ml
 /lib/Responsefile.ml
 /driver/Version.ml
+.depend
+.depend.extr
 # Documentation
 /doc/coq2html
 /doc/coq2html.ml
@@ -84,3 +86,5 @@
 .nra.cache
 .csdp.cache
 .vscode/
+refinedcc
+cparser/rc_annot.ml

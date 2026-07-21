@@ -41,6 +41,9 @@ include Makefile.menhir
 cparser/pre_parser_messages.ml:
 	$(MAKE) -C cparser correct
 
+cparser/rc_annot.ml: refinedc/rc_annot.ml
+	pa_ocaml $< > $@
+
 # Directories containing plain Caml code
 
 DIRS=extraction \
@@ -56,6 +59,18 @@ extraction/%.cmx: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 extraction/%.cmo: WARNINGS +=-w -20-27-32..34-39-41-44..45-60-67
 cparser/pre_parser.cmx: WARNINGS += -w -41
 cparser/pre_parser.cmo: WARNINGS += -w -41
+cparser/rc_annot.cmx: WARNINGS += -w -44
+cparser/rc_annot.cmo: WARNINGS += -w -44
+cparser/panic.cmx: WARNINGS += -w -44
+cparser/panic.cmo: WARNINGS += -w -44
+cparser/coq_pp.cmx: WARNINGS += -w -44
+cparser/coq_pp.cmo: WARNINGS += -w -44
+cparser/coq_path.cmx: WARNINGS += -w -44
+cparser/coq_path.cmo: WARNINGS += -w -44
+driver/project.cmx: WARNINGS += -w -44
+driver/project.cmo: WARNINGS += -w -44
+export/ExportRc.cmx: WARNINGS += -w -44
+export/ExportRc.cmo: WARNINGS += -w -44
 
 # Turn warnings into errors, but not for released tarballs
 ifeq ($(wildcard .git),.git)
@@ -66,7 +81,11 @@ endif
 
 COMPFLAGS+=-g -strict-sequence -safe-string \
   $(INCLUDES) -I "$(MENHIR_DIR)" -I +str -I +unix \
+  -I $(OPAM_SWITCH_PREFIX)/lib/earley/core -I $(OPAM_SWITCH_PREFIX)/lib/ubase -I $(OPAM_SWITCH_PREFIX)/lib/cmdliner \
+  -I $(OPAM_SWITCH_PREFIX)/lib/toml -I $(OPAM_SWITCH_PREFIX)/lib/ISO8601 \
   $(WARNINGS) $(WARN_ERRORS)
+
+C_COMPFLAGS=-I $(OPAM_SWITCH_PREFIX)/lib/ocaml/
 
 # Using .opt compilers if available
 
@@ -88,11 +107,15 @@ PARSERS=cparser/pre_parser.mly
 LEXERS=cparser/Lexer.mll lib/Tokenize.mll \
 	     lib/Readconfig.mll lib/Responsefile.mll
 
-LIBS=str.cmxa unix.cmxa $(MENHIR_LIBS)
+LIBS=str.cmxa unix.cmxa earley_core.cmxa ubase.cmxa cmdliner.cmxa ISO8601.cmxa toml.cmxa $(MENHIR_LIBS)
 LIBS_BYTE=$(patsubst %.cmxa,%.cma,$(patsubst %.cmx,%.cmo,$(LIBS)))
 
 EXECUTABLES=ccomp ccomp.byte cchecklink cchecklink.byte clightgen clightgen.byte rcvstgen rcvstgen.byte
-GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml
+GENERATED=$(PARSERS:.mly=.mli) $(PARSERS:.mly=.ml) $(LEXERS:.mll=.ml) cparser/pre_parser_messages.ml cparser/rc_annot.ml cparser/stubs.o
+
+cparser/stubs.o: cparser/stubs.c
+	@echo "GCC  $(C_COMPFLAGS) -c -o $@ $<"
+	@gcc $(C_COMPFLAGS) -c -o $@ $<
 
 # Beginning of part that assumes .depend.extr already exists
 
@@ -130,19 +153,19 @@ clightgen.byte: $(CLIGHTGEN_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
-RCVSTGEN_OBJS:=$(shell $(MODORDER) export/ExportRcVst.cmx)
+RC_OBJS:=$(shell $(MODORDER) export/ExportRc.cmx) cparser/stubs.o
 
 ifeq ($(OCAML_NATIVE_COMP),true)
-rcvstgen: $(RCVSTGEN_OBJS)
+refinedcc: $(RC_OBJS)
 	@echo "Linking $@"
 	@$(OCAMLOPT) -o $@ $(LIBS) $(LINK_OPT) $+
 else
-rcvstgen: rcvstgen.byte
+refinedcc: refinedcc.byte
 	@echo "Copying to $@"
 	@$(COPY) $+ $@
 endif
 
-rcvstgen.byte: $(RCVSTGEN_OBJS:.cmx=.cmo)
+refinedcc.byte: $(RC_OBJS:.cmx=.cmo)
 	@echo "Linking $@"
 	@$(OCAMLC) -o $@ $(LIBS_BYTE) $+
 
@@ -168,6 +191,7 @@ endif
 clean:
 	rm -f $(EXECUTABLES)
 	rm -f $(GENERATED)
+	rm -f refinedcc
 	for d in $(DIRS); do rm -f $$d/*.cm[iotx] $$d/*cmti $$d/*.o; done
 	$(MAKE) -C cparser clean
 

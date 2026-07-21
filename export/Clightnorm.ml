@@ -126,8 +126,8 @@ let rec norm_stmt s =
   | Sifthenelse(e, s1, s2) ->
       let (sl, e') = norm_expr e in
       add_sequence sl (Sifthenelse(e', norm_stmt s1, norm_stmt s2))
-  | Sloop(s1, s2) ->
-      Sloop(norm_stmt s1, norm_stmt s2)
+  | Sloop(a, s1, s2) ->
+      Sloop(a, norm_stmt s1, norm_stmt s2)
   | Sbreak | Scontinue | Sreturn None -> s
   | Sreturn (Some e) ->
       let (sl, e') = norm_expr e in
@@ -138,6 +138,7 @@ let rec norm_stmt s =
   | Slabel(lbl, s1) ->
       Slabel(lbl, norm_stmt s1)
   | Sgoto lbl -> s
+  | Sannot _ -> s
 
 and norm_lbl_stmt ls =
   match ls with

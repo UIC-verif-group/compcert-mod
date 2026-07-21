@@ -31,6 +31,7 @@ Require Import Globalenvs.
 Require Import Smallstep.
 Require Import Ctypes.
 Require Import Cop.
+Require Import RcAnnot.
 
 (** * Abstract syntax *)
 
@@ -101,13 +102,14 @@ Inductive statement : Type :=
   | Sbuiltin: option ident -> external_function -> list type -> list expr -> statement (**r builtin invocation *)
   | Ssequence : statement -> statement -> statement  (**r sequence *)
   | Sifthenelse : expr  -> statement -> statement -> statement (**r conditional *)
-  | Sloop: statement -> statement -> statement (**r infinite loop *)
+  | Sloop: option Z -> statement -> statement -> statement (**r infinite loop *)
   | Sbreak : statement                      (**r [break] statement *)
   | Scontinue : statement                   (**r [continue] statement *)
   | Sreturn : option expr -> statement      (**r [return] statement *)
   | Sswitch : expr -> labeled_statements -> statement  (**r [switch] statement *)
   | Slabel : label -> statement -> statement
   | Sgoto : label -> statement
+  | Sannot : expr_annot -> statement
 
 with labeled_statements : Type :=            (**r cases of a [switch] *)
   | LSnil: labeled_statements
@@ -116,14 +118,14 @@ with labeled_statements : Type :=            (**r cases of a [switch] *)
 
 (** The C loops are derived forms. *)
 
-Definition Swhile (e: expr) (s: statement) :=
-  Sloop (Ssequence (Sifthenelse e Sskip Sbreak) s) Sskip.
+Definition Swhile sd (e: expr) (s: statement) :=
+  Sloop sd (Ssequence (Sifthenelse e Sskip Sbreak) s) Sskip.
 
-Definition Sdowhile (s: statement) (e: expr) :=
-  Sloop s (Sifthenelse e Sskip Sbreak).
+Definition Sdowhile sd (s: statement) (e: expr) :=
+  Sloop sd s (Sifthenelse e Sskip Sbreak).
 
-Definition Sfor (s1: statement) (e2: expr) (s3: statement) (s4: statement) :=
-  Ssequence s1 (Sloop (Ssequence (Sifthenelse e2 Sskip Sbreak) s3) s4).
+Definition Sfor sd (s1: statement) (e2: expr) (s3: statement) (s4: statement) :=
+  Ssequence s1 (Sloop sd (Ssequence (Sifthenelse e2 Sskip Sbreak) s3) s4).
 
 (** ** Functions *)
 
@@ -521,7 +523,7 @@ Fixpoint find_label (lbl: label) (s: statement) (k: cont)
       | Some sk => Some sk
       | None => find_label lbl s2 k
       end
-  | Sloop s1 s2 =>
+  | Sloop _ s1 s2 =>
       match find_label lbl s1 (Kloop1 s1 s2 k) with
       | Some sk => Some sk
       | None => find_label lbl s2 (Kloop2 s1 s2 k)
@@ -556,7 +558,7 @@ Variable function_entry: function -> list val -> mem -> env -> temp_env -> mem -
 
 (** Transition relation *)
 
-Inductive step: state -> trace -> state -> Prop :=
+(*Inductive step: state -> trace -> state -> Prop :=
 
   | step_assign:   forall f a1 a2 k e le m loc ofs bf v2 v m',
       eval_lvalue e le m a1 loc ofs bf ->
@@ -672,7 +674,7 @@ Inductive step: state -> trace -> state -> Prop :=
 
   | step_returnstate: forall v optid f e le k m,
       step (Returnstate v (Kcall optid f e le k) m)
-        E0 (State f Sskip k e (set_opttemp optid v le) m).
+        E0 (State f Sskip k e (set_opttemp optid v le) m).*)
 
 (** ** Whole-program semantics *)
 
@@ -708,7 +710,7 @@ Inductive function_entry1 (ge: genv) (f: function) (vargs: list val) (m: mem) (e
       le = create_undef_temps f.(fn_temps) ->
       function_entry1 ge f vargs m e le m'.
 
-Definition step1 (ge: genv) := step ge (function_entry1 ge).
+(*Definition step1 (ge: genv) := step ge (function_entry1 ge).*)
 
 (** Second, parameters as temporaries. *)
 
@@ -721,11 +723,11 @@ Inductive function_entry2 (ge: genv)  (f: function) (vargs: list val) (m: mem) (
       bind_parameter_temps f.(fn_params) vargs (create_undef_temps f.(fn_temps)) = Some le ->
       function_entry2 ge f vargs m e le m'.
 
-Definition step2 (ge: genv) := step ge (function_entry2 ge).
+(*Definition step2 (ge: genv) := step ge (function_entry2 ge).*)
 
 (** Wrapping up these definitions in two small-step semantics. *)
 
-Definition semantics1 (p: program) :=
+(*Definition semantics1 (p: program) :=
   let ge := globalenv p in
   Semantics_gen step1 (initial_state p) final_state ge ge.
 
@@ -754,4 +756,4 @@ Proof.
   red; simpl; intros. inv H; simpl; try lia.
   eapply external_call_trace_length; eauto.
   eapply external_call_trace_length; eauto.
-Qed.
+Qed.*)

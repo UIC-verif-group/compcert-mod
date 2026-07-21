@@ -32,7 +32,8 @@ Require Ctypes.
 Require Csyntax.
 Require Ctyping.
 Require Clight.
-Require Compiler.
+Require SimplExpr.
+Require SimplLocals.
 Require Parser.
 Require Initializers.
 
@@ -87,9 +88,6 @@ Extraction Inline Inlining.ret Inlining.bind.
 (* Allocation *)
 Extract Constant Allocation.regalloc => "Regalloc.regalloc".
 
-(* Linearize *)
-Extract Constant Linearize.enumerate_aux => "Linearizeaux.enumerate_aux".
-
 (* SimplExpr *)
 Extract Constant SimplExpr.first_unused_ident => "Camlcoq.first_unused_ident".
 Extraction Inline SimplExpr.ret SimplExpr.error SimplExpr.bind SimplExpr.bind2.
@@ -116,26 +114,22 @@ Extract Constant Compopts.thumb =>
 Extract Constant Compopts.debug =>
   "fun _ -> !Clflags.option_g".
 
-(* Compiler *)
-Extract Constant Compiler.print_Clight => "PrintClight.print_if".
-Extract Constant Compiler.print_Cminor => "PrintCminor.print_if".
-Extract Constant Compiler.print_RTL => "PrintRTL.print_if".
-Extract Constant Compiler.print_LTL => "PrintLTL.print_if".
-Extract Constant Compiler.print_Mach => "PrintMach.print_if".
-Extract Constant Compiler.print => "fun (f: 'a -> unit) (x: 'a) -> f x; x".
-Extract Constant Compiler.time  => "Timing.time_coq".
-
-(*Extraction Inline Compiler.apply_total Compiler.apply_partial.*)
-
 (* Cabs *)
-Extract Constant Cabs.loc =>
-"{ lineno : int;
-   filename: string;
-   byteno: int;
-   ident : int;
- }".
-Extract Inlined Constant Cabs.string => "String.t".
+Extract Constant Cabs.loc => "Location.t".
 Extract Constant Cabs.char_code => "int64".
+
+(* RcAnnot *)
+Extract Inlined Constant RcAnnot.string => "String.t".
+Extract Constant RcAnnot.function_annot => "Rc_annot.function_annot".
+Extract Constant RcAnnot.state_descr => "Rc_annot.state_descr".
+Extract Constant RcAnnot.raw_expr_annot => "Rc_annot.raw_expr_annot".
+Extract Constant RcAnnot.global_annot => "Rc_annot.global_annot".
+Extract Constant RcAnnot.struct_annot => "Rc_annot.struct_annot".
+Extract Constant RcAnnot.member_annot => "Rc_annot.member_annot".
+Extract Constant RcAnnot.default_function_annot => "Rc_annot.function_annot []".
+Extract Constant RcAnnot.default_struct_annot => "Rc_annot.SA_basic Rc_annot.default_basic_struct_annot".
+Extract Constant RcAnnot.default_union_annot => "Rc_annot.SA_union".
+Extract Constant RcAnnot.default_member_annot => "Rc_annot.MA_none".
 
 (* Processor-specific extraction directives *)
 
@@ -152,8 +146,10 @@ Set Extraction AccessOpaque.
 Cd "extraction".
 
 Separate Extraction
-   Compiler.transf_c_program Compiler.transf_cminor_program
-   Cexec.do_initial_state Cexec.do_step Cexec.at_final_state
+   BinPos.Pos.pred Floats.Float.of_bits Floats.Float32.of_bits
+   AST.transform_program SimplExpr.transl_program SimplLocals.transf_program
+   Machregs.register_names Machregs.register_by_name
+   Ctypes.signature_of_type
    Ctypes.merge_attributes Ctypes.remove_attributes 
    Ctypes.build_composite_env Ctypes.layout_struct
    Initializers.transl_init Initializers.constval
@@ -163,7 +159,7 @@ Separate Extraction
    Ctyping.eselection
    Ctypes.make_program
    Clight.type_of_function
-   Conventions1.callee_save_type Conventions1.is_float_reg
+   Conventions1.is_callee_save Conventions1.callee_save_type Conventions1.is_float_reg
    Conventions1.int_caller_save_regs Conventions1.float_caller_save_regs
    Conventions1.int_callee_save_regs Conventions1.float_callee_save_regs
    Conventions1.dummy_int_reg Conventions1.dummy_float_reg

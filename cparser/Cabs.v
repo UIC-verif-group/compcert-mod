@@ -15,14 +15,12 @@
 (* *********************************************************************)
 
 Require Import BinPos.
+Require Import RcAnnot.
 
-(* OCaml's string type. *)
-Parameter string : Type.
 (* OCaml's int64 type, used to represent individual characters in literals. *)
 Parameter char_code : Type.
 (* Context information. *)
 Parameter loc : Type.
-Parameter rc_anno : Type.
 
 Record floatInfo := {
   isHex_FI:bool;
@@ -42,6 +40,9 @@ Inductive encoding :=
 Inductive structOrUnion :=
   | STRUCT | UNION.
 
+Definition default_su_annot (su : structOrUnion) :=
+  match su with STRUCT => default_struct_annot | UNION => default_union_annot end.
+
 Inductive typeSpecifier := (* Merge all specifiers into one type *)
   | Tvoid                  (* Type specifier ISO 6.7.2 *)
   | Tchar
@@ -60,7 +61,7 @@ Inductive typeSpecifier := (* Merge all specifiers into one type *)
    * a forward declaration or simple reference to the type).
    * They also have a list of __attribute__s that appeared between the
    * keyword and the type name (definitions only) *)
-  | Tstruct_union : structOrUnion -> option string -> option (list field_group) -> list attribute -> typeSpecifier
+  | Tstruct_union : option struct_annot -> structOrUnion -> option string -> option (list field_group) -> list attribute -> typeSpecifier
   | Tenum : option string -> option (list (string * option expression * loc)) -> list attribute -> typeSpecifier
 
 with storage :=
@@ -101,7 +102,7 @@ with parameter :=
 
 (* The optional expression is the bitfield *)
 with field_group :=
-  | Field_group : list spec_elem -> list (option name * option expression) -> loc -> field_group
+  | Field_group : list spec_elem -> list (option member_annot * (option name * option expression)) -> loc -> field_group
   | Field_group_static_assert : expression -> loc -> constant -> loc -> loc -> field_group
 
 (* The decl_type is in the order in which they are printed. Only the name of
@@ -177,7 +178,6 @@ with attribute :=
   | GCC_ATTR : list gcc_attribute -> loc -> attribute
   | PACKED_ATTR : list expression -> loc -> attribute
   | ALIGNAS_ATTR : list expression -> loc -> attribute
-  | RC_ATTR : rc_anno -> loc -> attribute
 
 with gcc_attribute :=
   | GCC_ATTR_EMPTY
@@ -212,8 +212,8 @@ Definition asm_flag := (encoding * list char_code)%type.
 ** Declaration definition (at toplevel)
 *)
 Inductive definition :=
- | FUNDEF : list spec_elem -> name -> list definition -> statement -> loc -> definition
- | DECDEF : init_name_group -> loc -> definition  (* global variable(s), or function prototype *)
+ | FUNDEF : list spec_elem -> name -> option function_annot -> list definition -> statement -> loc -> definition
+ | DECDEF : option function_annot -> init_name_group -> loc -> definition  (* global variable(s), or function prototype *)
  | PRAGMA : string -> loc -> definition
  | STATIC_ASSERT : expression -> loc -> constant -> loc -> loc -> definition
 
@@ -226,9 +226,9 @@ with statement :=
  | COMPUTATION : expression -> loc -> statement
  | BLOCK : list statement -> loc -> statement
  | If : expression -> statement -> option statement -> loc -> statement
- | WHILE : expression -> statement -> loc -> statement
- | DOWHILE : expression -> statement -> loc -> statement
- | FOR : option for_clause -> option expression -> option expression -> statement -> loc -> statement
+ | WHILE : option (Z * state_descr) -> expression -> statement -> loc -> statement
+ | DOWHILE : option (Z * state_descr) -> expression -> statement -> loc -> statement
+ | FOR : option (Z * state_descr) -> option for_clause -> option expression -> option expression -> statement -> loc -> statement
  | BREAK : loc -> statement
  | CONTINUE : loc -> statement
  | RETURN : option expression -> loc -> statement
@@ -239,7 +239,7 @@ with statement :=
  | GOTO : string -> loc -> statement
  | ASM : list cvspec -> encoding -> list char_code -> list asm_operand -> list asm_operand -> list asm_flag -> loc -> statement
  | DEFINITION : definition -> statement (*definition or declaration of a variable or type*)
- | RC_STMT : rc_anno -> loc -> statement
+ | ANNOT : (Z * raw_expr_annot) -> loc -> statement
 
 with for_clause :=
  | FC_EXP : expression -> for_clause

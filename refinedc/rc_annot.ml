@@ -1,5 +1,8 @@
+(* lightly modified from https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/rc_annot.ml *)
+open Earley_core
 open Earley
-open RcExtra
+open Extra
+open Location
 
 (** {3 Combinators and utilities} *)
 
@@ -113,6 +116,7 @@ and type_expr =
   | Ty_exists of pattern * coq_expr option * type_expr
   | Ty_constr of type_expr * constr
   | Ty_params of ident * type_expr_arg list
+  | Ty_list   of type_expr list
   | Ty_Coq    of coq_expr
 
 and type_expr_arg =
@@ -208,6 +212,8 @@ and parser type_expr @(p : [`Atom | `Cstr | `Full]) =
       when p >= `Cstr -> Ty_constr(ty,c)
   | "(" ty:(type_expr `Full) ")"
       when p >= `Atom -> ty
+  | "[" tys:type_elems  "]"
+       when p >= `Atom -> Ty_list(tys)
 
 and parser type_expr_arg =
   | ty:(type_expr `Full)
@@ -218,6 +224,10 @@ and parser type_expr_arg =
 and parser type_args =
   | EMPTY                                   -> []
   | e:type_expr_arg es:{"," type_expr_arg}* -> e::es
+
+and parser type_elems =
+  | EMPTY                                           -> []
+  | e:(type_expr `Full) es:{";" (type_expr `Full)}* -> e::es
 
 let type_expr = type_expr `Full
 
@@ -379,15 +389,13 @@ type annot =
 let annot_lemmas : string list -> string list =
   List.map (Printf.sprintf "all: try by apply: %s; solve_goal.")
 
-let rc_locs : Location.Pool.t = Location.Pool.make ()
-
 exception Invalid_annot of Location.t * string
 
 let invalid_annot : type a. Location.t -> string -> a = fun loc msg ->
   raise (Invalid_annot(loc, msg))
 
 let invalid_annot_no_pos : type a. string -> a = fun msg ->
-  invalid_annot (Location.none rc_locs) msg
+  invalid_annot (Location.none) msg
 
 type rc_attr_arg =
   { rc_attr_arg_value  : string Location.located
@@ -403,14 +411,13 @@ let loc_of_pos : rc_attr_arg -> int -> Location.t = fun arg pos ->
         else find (pos - String.length p.elt) pieces
   in
   let (i, loc) = find pos arg.rc_attr_arg_pieces in
-  match Location.get loc with
-  | None    -> Location.none rc_locs
-  | Some(d) ->
-  let file = d.loc_file in
-  let line = d.loc_line1 in
-  let col = d.loc_col1 in
+  let d = loc in
+  let file = d.filename in
+  let line = d.lineno in
+  let col = d.byteno in
+  let id = d.ident in
   (* FIXME unicode offset. *)
-  Location.make file (line - 1) (col + i) (line - 1) (col + i) rc_locs
+  Location.make file (line - 1) (col + i) id
 
 type rc_attr =
   { rc_attr_id   : string Location.located
@@ -790,3 +797,15 @@ let global_annot : rc_attr list -> global_annot option = fun attrs ->
   match !typ with
   | Some(ty) -> Some {ga_parameters = !parameters; ga_type = ty}
   | None -> None
+
+type block_annot =
+  | BA_none
+  | BA_loop of state_descr
+
+type hint_kind =
+  | HK_block  of string
+  | HK_assert of int
+
+type hint =
+  { ht_kind  : hint_kind
+  ; ht_annot : state_descr }

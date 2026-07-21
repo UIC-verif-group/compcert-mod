@@ -27,3 +27,15 @@ val save_context : (unit -> (unit -> unit)) ref
    typename *)
 val declare_varname : (string -> unit) ref
 val declare_typename : (string -> unit) ref
+
+(* RefinedC attributes *)
+type rc_annot_type =
+  | FunctionAnnot
+  | LoopAnnot
+  | InlineAnnot
+  (* | ArgAnnot https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/ail_to_coq.ml?ref_type=heads#L741 *)
+  | GlobalAnnot
+  | StructAnnot
+  | MemberAnnot
+
+val set_annot_type : (int -> rc_annot_type -> unit) ref

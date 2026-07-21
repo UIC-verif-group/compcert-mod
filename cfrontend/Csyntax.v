@@ -19,6 +19,7 @@
 Require Import Coqlib Maps Integers Floats Errors.
 Require Import AST Linking Values.
 Require Import Ctypes Cop.
+Require Import RcAnnot.
 
 (** ** Expressions *)
 
@@ -164,15 +165,16 @@ Inductive statement : Type :=
   | Sdo : expr -> statement            (**r evaluate expression for side effects *)
   | Ssequence : statement -> statement -> statement  (**r sequence *)
   | Sifthenelse : expr  -> statement -> statement -> statement (**r conditional *)
-  | Swhile : expr -> statement -> statement   (**r [while] loop *)
-  | Sdowhile : expr -> statement -> statement (**r [do] loop *)
-  | Sfor: statement -> expr -> statement -> statement -> statement (**r [for] loop *)
+  | Swhile : option Z -> expr -> statement -> statement   (**r [while] loop *)
+  | Sdowhile : option Z -> expr -> statement -> statement (**r [do] loop *)
+  | Sfor: option Z -> statement -> expr -> statement -> statement -> statement (**r [for] loop *)
   | Sbreak : statement                      (**r [break] statement *)
   | Scontinue : statement                   (**r [continue] statement *)
   | Sreturn : option expr -> statement     (**r [return] statement *)
   | Sswitch : expr -> labeled_statements -> statement  (**r [switch] statement *)
   | Slabel : label -> statement -> statement
   | Sgoto : label -> statement
+  | Sannot : expr_annot -> statement
 
 with labeled_statements : Type :=            (**r cases of a [switch] *)
   | LSnil: labeled_statements

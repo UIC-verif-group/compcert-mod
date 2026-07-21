@@ -84,8 +84,15 @@ let rec expr p = function
       fprintf p "(Ealignof %a %a)" typ t1 typ t
 
 (* Statements *)
+let expr_annot p = function
+  | RcAnnot.ExprAnnot_annot s -> fprintf p "(ExprAnnot_annot (%s))" s
+  | RcAnnot.ExprAnnot_assert i -> fprintf p "(ExprAnnot_assert (%a%%nat))" coqZ i
 
-let rec stmt p = function
+let is_assert = function
+  | Evar(id, t) -> Hashtbl.find string_of_atom id = "assert"
+  | _ -> false
+
+let rec stmt f p = function
   | Sskip ->
       fprintf p "Sskip"
   | Sassign(e1, e2) ->
@@ -93,7 +100,9 @@ let rec stmt p = function
   | Sset(id, e2) ->
       fprintf p "@[<hov 2>(Sset %a@ %a)@]" ident id expr e2
   | Scall(optid, e1, el) ->
-      fprintf p "@[<hov 2>(Scall %a@ %a@ %a)@]"
+      if is_assert e1 then fprintf p "@[<hov 2>(Sassert %a)@]"
+        expr (List.hd el)
+      else fprintf p "@[<hov 2>(Scall %a@ %a@ %a)@]"
         (print_option ident) optid expr e1 (print_list expr) el
   | Sbuiltin(optid, ef, tyl, el) ->
       fprintf p "@[<hov 2>(Sbuiltin %a@ %a@ %a@ %a)@]"
@@ -102,38 +111,43 @@ let rec stmt p = function
         typlist tyl
         (print_list expr) el
   | Ssequence(Sskip, s2) ->
-      stmt p s2
+      stmt f p s2
   | Ssequence(s1, Sskip) ->
-      stmt p s1
+      stmt f p s1
   | Ssequence(s1, s2) ->
-      fprintf p "@[<hv 2>(Ssequence@ %a@ %a)@]" stmt s1 stmt s2
+      fprintf p "@[<hv 2>(Ssequence@ %a@ %a)@]" (stmt f) s1 (stmt f) s2
   | Sifthenelse(e, s1, s2) ->
-      fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e stmt s1 stmt s2
-  | Sloop (Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a)@]" expr e stmt s
-  | Sloop (Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
-      fprintf p "@[<hv 2>(Swhile@ %a@ %a)@]" expr e stmt s
-  | Sloop(s1, s2) ->
-      fprintf p "@[<hv 2>(Sloop@ %a@ %a)@]" stmt s1 stmt s2
+      fprintf p "@[<hv 2>(Sifthenelse %a@ %a@ %a)@]" expr e (stmt f) s1 (stmt f) s2
+  | Sloop (sd, Ssequence (Sifthenelse(e, Sskip, Sbreak), s), Sskip) ->
+      (match sd with Some i -> fprintf p "@[<hv 2>(Swhile@ %a%%nat@ %a@ %a)@]" coqZ i expr e (stmt f) s
+       | None -> fprintf p "@[<hv 2>(Clight.Swhile@ %a@ %a)@]" expr e (stmt f) s)
+  | Sloop (sd, Ssequence (Ssequence(Sskip, Sifthenelse(e, Sskip, Sbreak)), s), Sskip) ->
+      (match sd with Some i -> fprintf p "@[<hv 2>(Swhile@ %a%%nat@ %a@ %a)@]" coqZ i expr e (stmt f) s
+       | None -> fprintf p "@[<hv 2>(Clight.Swhile@ %a@ %a)@]" expr e (stmt f) s)
+  | Sloop(sd, s1, s2) ->
+      (match sd with Some i -> fprintf p "@[<hv 2>(Sloop@ %a%%nat@ %a@ %a)@]" coqZ i (stmt f) s1 (stmt f) s2
+       | None -> fprintf p "@[<hv 2>(Clight.Sloop@ %a@ %a)@]" (stmt f) s1 (stmt f) s2)
   | Sbreak ->
       fprintf p "Sbreak"
   | Scontinue ->
       fprintf p "Scontinue"
   | Sswitch(e, cases) ->
-      fprintf p "@[<hv 2>(Sswitch %a@ %a)@]" expr e lblstmts cases
+      fprintf p "@[<hv 2>(Sswitch %a@ %a)@]" expr e (lblstmts f) cases
   | Sreturn e ->
       fprintf p "@[<hv 2>(Sreturn %a)@]" (print_option expr) e
   | Slabel(lbl, s1) ->
-      fprintf p "@[<hv 2>(Slabel %a@ %a)@]" ident lbl stmt s1
+      fprintf p "@[<hv 2>(Slabel %a@ %a)@]" ident lbl (stmt f) s1
   | Sgoto lbl ->
       fprintf p "(Sgoto %a)" ident lbl
+  | Sannot a ->
+      fprintf p "(Sannot %a)" expr_annot a
 
-and lblstmts p = function
+and lblstmts f p = function
   | LSnil ->
       (fprintf p "LSnil")
   | LScons(lbl, s, ls) ->
       fprintf p "@[<hv 2>(LScons %a@ %a@ %a)@]"
-              (print_option coqZ) lbl stmt s lblstmts ls
+              (print_option coqZ) lbl (stmt f) s (lblstmts f) ls
 
 (* Global definitions *)
 
@@ -145,7 +159,7 @@ let print_function p (id, f) =
   fprintf p "  fn_vars := %a;@ " (print_list (print_pair ident typ)) f.fn_vars;
   fprintf p "  fn_temps := %a;@ " (print_list (print_pair ident typ)) f.fn_temps;
   fprintf p "  fn_body :=@ ";
-  stmt p f.fn_body;
+  stmt f p f.fn_body;
   fprintf p "@ |}.@ @ "
 
 let print_globdef p (id, gd) =
@@ -168,6 +182,9 @@ let print_ident_globdef p = function
 let prologue = "\
 From Coq Require Import String List ZArith.\n\
 From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.\n\
+Set Warnings \"-notation-overridden,-custom-entry-overridden,-hiding-delimiting-key\".\n\
+From VST.typing Require Import ClightSugar.\n\
+Set Warnings \"notation-overridden,custom-entry-overridden,hiding-delimiting-key\".\n\
 Import Clightdefs.ClightNotations.\n\
 Local Open Scope Z_scope.\n\
 Local Open Scope string_scope.\n\
@@ -201,7 +218,7 @@ let rec name_stmt = function
       name_opt_temporary optid; List.iter name_expr el
   | Ssequence(s1, s2) -> name_stmt s1; name_stmt s2
   | Sifthenelse(e, s1, s2) -> name_expr e; name_stmt s1; name_stmt s2
-  | Sloop(s1, s2) -> name_stmt s1; name_stmt s2
+  | Sloop(_, s1, s2) -> name_stmt s1; name_stmt s2
   | Sbreak -> ()
   | Scontinue -> ()
   | Sswitch(e, cases) -> name_expr e; name_lblstmts cases
@@ -209,6 +226,7 @@ let rec name_stmt = function
   | Sreturn None -> ()
   | Slabel(lbl, s1) -> name_stmt s1
   | Sgoto lbl -> ()
+  | Sannot _ -> ()
 
 and name_lblstmts = function
   | LSnil -> ()

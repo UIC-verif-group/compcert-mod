@@ -1050,6 +1050,11 @@ let swrap = function
   | Errors.Error msg ->
       error "retyping error: %s" (string_of_errmsg msg); Csyntax.Sskip
 
+let cook_annot raw_annot =
+  match raw_annot with
+  | (_, Rc_annot.RawExprAnnot_annot s) -> RcAnnot.ExprAnnot_annot s
+  | (i, Rc_annot.RawExprAnnot_assert _) -> RcAnnot.ExprAnnot_assert i
+
 let rec convertStmt env s =
   updateLoc s.sloc;
   match s.sdesc with
@@ -1064,15 +1069,15 @@ let rec convertStmt env s =
   | C.Sif(e, s1, s2) ->
       let te = convertExpr env e in
       swrap (Ctyping.sifthenelse te (convertStmt env s1) (convertStmt env s2))
-  | C.Swhile(e, s1) ->
+  | C.Swhile(sd, e, s1) ->
       let te = convertExpr env e in
-      swrap (Ctyping.swhile te (convertStmt env s1))
-  | C.Sdowhile(s1, e) ->
+      swrap (Ctyping.swhile (Option.map fst sd) te (convertStmt env s1))
+  | C.Sdowhile(sd, s1, e) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sdowhile te (convertStmt env s1))
-  | C.Sfor(s1, e, s2, s3) ->
+      swrap (Ctyping.sdowhile (Option.map fst sd) te (convertStmt env s1))
+  | C.Sfor(sd, s1, e, s2, s3) ->
       let te = convertExpr env e in
-      swrap (Ctyping.sfor
+      swrap (Ctyping.sfor (Option.map fst sd)
                   (convertStmt env s1) te
                   (convertStmt env s2) (convertStmt env s3))
   | C.Sbreak ->
@@ -1102,6 +1107,8 @@ let rec convertStmt env s =
       if not !Clflags.option_finline_asm then
         unsupported "inline 'asm' statement (consider adding option [-finline-asm])";
       Csyntax.Sdo (convertAsm s.sloc env txt outputs inputs clobber)
+  | C.Sannot(a) ->
+      Csyntax.Sannot(cook_annot a)
 
 and convertSwitch env is_64 = function
   | {sdesc = C.Sskip} ->
@@ -1141,7 +1148,7 @@ let convertFundef loc env fd =
       fd.fd_params in
   let vars =
     List.map
-      (fun (sto, id, ty, init) ->
+      (fun (global_annot, sto, id, ty, init) ->
         if sto = Storage_extern || sto = Storage_static then
           unsupported "'static' or 'extern' local variable";
         if init <> None then
@@ -1175,13 +1182,13 @@ let convertFundef loc env fd =
                                          fd.fd_vararg fd.fd_attrib;
            fn_params = params;
            fn_vars = vars;
-           fn_body = body'}))
+           fn_body = body' }))
 
 (** External function declaration *)
 
 let re_builtin = Str.regexp "__builtin_"
 
-let convertFundecl env (sto, id, ty, optinit) =
+let convertFundecl env (global_annot, sto, id, ty, optinit) =
   let (args, res, cconv) =
     match convertTyp env ty with
     | Tfunction(args, res, cconv) -> (args, res, cconv)
@@ -1227,7 +1234,7 @@ let convertInitializer env ty i =
 
 (** Global variable *)
 
-let convertGlobvar loc env (sto, id, ty, optinit) =
+let convertGlobvar loc env (global_annot, sto, id, ty, optinit) =
   let id' = intern_string id.name in
   Debug.atom_global id id';
   let ty' = convertTyp env ty in
@@ -1276,7 +1283,7 @@ let rec convertGlobdecls env res gl =
   | g :: gl' ->
       updateLoc g.gloc;
       match g.gdesc with
-      | C.Gdecl((sto, id, ty, optinit) as d) ->
+      | C.Gdecl((global_annot, sto, id, ty, optinit) as d) ->
           (* Functions become external declarations.
              Other types become variable declarations. *)
           begin match Cutil.unroll env ty with
@@ -1285,7 +1292,7 @@ let rec convertGlobdecls env res gl =
                 warning Diagnostics.Unnamed "'%s' is declared without a function prototype" id.name;
               convertGlobdecls env (convertFundecl env d :: res) gl'
           | _ ->
-              convertGlobdecls env (convertGlobvar g.gloc env d :: res) gl'
+              convertGlobdecls env (convertGlobvar g.gloc env d :: res) gl' 
           end
       | C.Gfundef fd ->
           convertGlobdecls env (convertFundef g.gloc env fd :: res) gl'
@@ -1308,7 +1315,7 @@ let rec convertCompositedefs env res gl =
   | g :: gl' ->
       updateLoc g.gloc;
       match g.gdesc with
-      | C.Gcompositedef(su, id, a, m) ->
+      | C.Gcompositedef(_, su, id, a, m) ->
           convertCompositedefs env
              (convertCompositedef env su id a m :: res) gl'
       | _ ->
@@ -1396,7 +1403,7 @@ let rec translEnv env = function
         match g.gdesc with
         | C.Gcompositedecl(su, id, attr) ->
             Env.add_composite env id (Cutil.composite_info_decl su attr)
-        | C.Gcompositedef(su, id, attr, fld) ->
+        | C.Gcompositedef(_, su, id, attr, fld) ->
             Env.add_composite env id (Cutil.composite_info_def env su attr fld)
         | C.Gtypedef(id, ty) ->
             Env.add_typedef env id ty
@@ -1423,13 +1430,13 @@ let cleanupGlobals p =
         if IdentSet.mem fd.fd_name !strong then
           error "multiple definitions of %s" fd.fd_name.name;
         strong := IdentSet.add fd.fd_name !strong
-    | C.Gdecl(Storage_extern, id, ty, init) ->
+    | C.Gdecl(global_annot, Storage_extern, id, ty, init) ->
         extern := IdentSet.add id !extern
-    | C.Gdecl(sto, id, ty, Some i) ->
+    | C.Gdecl(global_annot, sto, id, ty, Some i) ->
         if IdentSet.mem id !strong then
           error "multiple definitions of %s" id.name;
         strong := IdentSet.add id !strong
-    | C.Gdecl(sto, id, ty, None) ->
+    | C.Gdecl(global_annot, sto, id, ty, None) ->
         weak := IdentSet.add id !weak
     | _ -> () in
   List.iter classify_def p;
@@ -1440,7 +1447,7 @@ let cleanupGlobals p =
     | g :: gl ->
         updateLoc g.gloc;
         match g.gdesc with
-        | C.Gdecl(sto, id, ty, init) ->
+        | C.Gdecl(global_annot, sto, id, ty, init) ->
             let better_def_exists =
               if sto = Storage_extern then
                 IdentSet.mem id !strong || IdentSet.mem id !weak

@@ -22,3 +22,13 @@ type identifier_type =
 let save_context:(unit -> (unit -> unit)) ref = ref (fun _ -> assert false)
 let declare_varname:(string -> unit) ref = ref (fun _ -> assert false)
 let declare_typename:(string -> unit) ref = ref (fun _ -> assert false)
+
+type rc_annot_type =
+  | FunctionAnnot
+  | LoopAnnot
+  | InlineAnnot
+  | GlobalAnnot
+  | StructAnnot
+  | MemberAnnot
+
+let set_annot_type:(int -> rc_annot_type -> unit) ref = ref (fun _ _ -> assert false)

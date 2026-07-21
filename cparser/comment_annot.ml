@@ -1,18 +1,19 @@
+(* https://gitlab.mpi-sws.org/iris/refinedc/-/blob/master/frontend/comment_annot.ml *)
 (** Support for annotations in special comments. *)
 
 type inlined_code =
-  { prelude : string list
-  ; section : string list
-  ; final   : string list }
+  { ic_prelude : string list
+  ; ic_section : string list
+  ; ic_final   : string list }
 
-type t =
-  { inlined       : inlined_code
-  ; requires      : string list
-  ; imports       : (string * string) list
-  ; proof_imports : (string * string) list
-  ; code_imports  : (string * string) list
-  ; context       : string list
-  ; typedefs      : RcDefn.typedef list }
+type comment_annots =
+  { ca_inlined       : inlined_code
+  ; ca_requires      : string list
+  ; ca_imports       : (string * string) list
+  ; ca_proof_imports : (string * string) list
+  ; ca_code_imports  : (string * string) list
+  ; ca_context       : string list
+  ; ca_typedefs      : Rc_annot.typedef list }
 
 type annot_line =
   | AL_annot of string * string option
@@ -49,14 +50,14 @@ let read_import : string -> (string * string * where) option = fun s ->
   try Scanf.sscanf s "%s from %s %!" (k Default)
   with End_of_file | Scanf.Scan_failure(_) -> None
 
-let read_typedef : string -> RcDefn.typedef option = fun s ->
-  let open Earley in
-  let parse_string = Earley.parse_string RcDefn.typedef Blanks.default in
+let read_typedef : string -> Rc_annot.typedef option = fun s ->
+  let open Earley_core in
+  let parse_string = Earley.parse_string Rc_annot.typedef Blanks.default in
   try Some(parse_string s) with Earley.Parse_error(_,_) -> None
 
-let parse : string list -> t = fun ls ->
-  let error s =
-    Diagnostics.fatal_error no_loc "Comment annotation error: %s" s
+let parse_annots : string list -> comment_annots = fun ls ->
+  let error fmt =
+    Panic.panic_no_pos ("Comment annotation error: " ^^ fmt ^^ ".")
   in
   let imports = ref [] in
   let requires = ref [] in
@@ -73,11 +74,11 @@ let parse : string list -> t = fun ls ->
       | AL_annot("end", _   ) :: ls ->
           error "[rc::end] does not expect a payload"
       | AL_annot(_    , _   ) :: ls ->
-          error (Printf.sprintf "unclosed [rc::%s] annotation" start_tag)
+          error "unclosed [rc::%s] annotation" start_tag
       | AL_none               :: ls ->
           error "interrupted block"
       | []                          ->
-          error (Printf.sprintf "unclosed [rc::%s] annotation" start_tag)
+          error "unclosed [rc::%s] annotation" start_tag
     in
     read_block [] ls
   in
@@ -89,7 +90,7 @@ let parse : string list -> t = fun ls ->
     | AL_annot(n,p) :: ls ->
     let get_payload () =
       match p with Some(s) -> s | None ->
-      error (Printf.sprintf "annotation [rc::%s] expects a payload" n)
+      error "annotation [rc::%s] expects a payload" n
     in
     let add_inlined r p ls =
       let (lines, ls) =
@@ -108,7 +109,7 @@ let parse : string list -> t = fun ls ->
         begin
           match (read_import (get_payload ())) with
           | Some(i) -> imports := i :: !imports; loop ls
-          | None    -> error (Printf.sprintf "invalid [rc::%s] annotation" n)
+          | None    -> error "invalid [rc::%s] annotation" n
         end
     | "require" ->
         begin
@@ -119,7 +120,7 @@ let parse : string list -> t = fun ls ->
         begin
           match (read_typedef (get_payload ())) with
           | Some(t) -> typedefs := t :: !typedefs; loop ls
-          | None    -> error "invalid [rc::typedef] annotation"
+          | None    -> error ("invalid [rc::typedef] annotation")
         end
     | "context" ->
         begin
@@ -127,20 +128,20 @@ let parse : string list -> t = fun ls ->
           loop ls
         end
     | _         ->
-        error (Printf.sprintf "unknown annotation [rc::%s]" n)
+        error "unknown annotation [rc::%s]" n
   in
   loop (List.map read_line ls);
   let imports = List.rev !imports in
-  { inlined= 
-    { prelude= List.rev !inlined_top
-    ; section= List.rev !inlined
-    ; final=   List.rev !inlined_end }
-  ; proof_imports= List.filter_map 
-    (fun (f,m,w) -> if w = ProofsOnly then Some (f,m) else None) imports
-  ; code_imports= List.filter_map 
-    (fun (f,m,w) -> if w = CodeOnly then Some (f,m) else None) imports
-  ; imports= List.filter_map
-    (fun (f,m,w) -> if w = Default then Some (f,m) else None) imports
-  ; requires       = List.rev !requires
-  ; context        = List.rev !context
-  ; typedefs       = List.rev !typedefs }
+  let proof_imports = List.filter (fun (_,_,w) -> w = ProofsOnly) imports in
+  let code_imports  = List.filter (fun (_,_,w) -> w = CodeOnly  ) imports in
+  let imports       = List.filter (fun (_,_,w) -> w = Default   ) imports in
+  let ic_prelude = List.rev !inlined_top in
+  let ic_section = List.rev !inlined in
+  let ic_final   = List.rev !inlined_end in
+  { ca_inlined        = { ic_prelude ; ic_section ; ic_final }
+  ; ca_proof_imports  = List.map (fun (f,m,_) -> (f,m)) proof_imports
+  ; ca_code_imports   = List.map (fun (f,m,_) -> (f,m)) code_imports
+  ; ca_imports        = List.map (fun (f,m,_) -> (f,m)) imports
+  ; ca_requires       = List.rev !requires
+  ; ca_context        = List.rev !context
+  ; ca_typedefs       = List.rev !typedefs }

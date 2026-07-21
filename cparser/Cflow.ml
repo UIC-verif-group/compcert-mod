@@ -187,9 +187,9 @@ let rec contains_default s =
   | Sdo _ -> false
   | Sseq(s1, s2) -> contains_default s1 || contains_default s2
   | Sif(e, s1, s2) -> contains_default s1 || contains_default s2
-  | Swhile(e, s) -> contains_default s
-  | Sdowhile(s, e) -> contains_default s
-  | Sfor(s1, e, s2, s3) ->
+  | Swhile(_, e, s) -> contains_default s
+  | Sdowhile(_, s, e) -> contains_default s
+  | Sfor(_, s1, e, s2, s3) ->
       contains_default s1 || contains_default s2 || contains_default s3
   | Sbreak -> false
   | Scontinue -> false
@@ -203,6 +203,7 @@ let rec contains_default s =
   | Sblock sl -> List.exists contains_default sl
   | Sdecl dcl -> false
   | Sasm _ -> false
+  | Sannot _ -> false
 
 (* Extract the attributes of a function type, looking for "noreturn". *)
 
@@ -237,18 +238,18 @@ let rec outcomes env s : flow =
       seq (outcomes env s1) (outcomes env s2)
   | Sif(e, s1, s2) ->
       if_ env e (outcomes env s1) (outcomes env s2)
-  | Swhile(e, s) ->
+  | Swhile(_, e, s) ->
       catch_break (
         loop (
           if_ env e
              (catch_continue (outcomes env s)) (* e is true: execute body [s] *)
              break))                           (* e is false: exit loop *)
-  | Sdowhile(s, e) ->
+  | Sdowhile(_, s, e) ->
       catch_break (
         loop (
           seq (catch_continue (outcomes env s)) (* do the body *)
               (if_ env e normal break)))        (* then continue or break *)
-  | Sfor(s1, e, s2, s3) ->
+  | Sfor(_, s1, e, s2, s3) ->
       seq (outcomes env s1)              (* initialization, runs once *)
           (catch_break (
             loop (
@@ -276,6 +277,8 @@ let rec outcomes env s : flow =
   | Sdecl dcl ->
       normal
   | Sasm _ ->
+      normal
+  | Sannot _ ->
       normal
 
 and outcomes_block env sl =

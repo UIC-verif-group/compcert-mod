@@ -16,15 +16,20 @@
 
 %{
 
-Require Extraction.
-Require Import List.
+From Coq Require Extraction.
+From Coq Require Import List.
 Require Cabs.
 
 %}
 
-%token<Cabs.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
-%token<Cabs.string * Cabs.loc> PRAGMA
-%token<RcAnno.t * Cabs.loc> RCANNO
+%token<RcAnnot.string * Cabs.loc> VAR_NAME TYPEDEF_NAME OTHER_NAME
+%token<RcAnnot.string * Cabs.loc> PRAGMA
+%token<option RcAnnot.function_annot> FUNCTION_ANNOT
+%token<Z * RcAnnot.state_descr> LOOP_ANNOT
+%token<option (Z * RcAnnot.raw_expr_annot) * Cabs.loc> INLINE_ANNOT
+%token<option RcAnnot.global_annot> GLOBAL_ANNOT
+%token<option RcAnnot.struct_annot> STRUCT_ANNOT
+%token<option RcAnnot.member_annot> MEMBER_ANNOT
 %token<Cabs.encoding * list Cabs.char_code * Cabs.loc> STRING_LITERAL
 %token<Cabs.constant * Cabs.loc> CONSTANT
 %token<Cabs.loc> SIZEOF PTR INC DEC LEFT RIGHT LEQ GEQ EQEQ EQ NEQ LT GT
@@ -69,13 +74,13 @@ Require Cabs.
 %type<list Cabs.field_group (* Reverse order *)> struct_declaration_list
 %type<Cabs.field_group> struct_declaration
 %type<list Cabs.spec_elem * Cabs.loc> specifier_qualifier_list
-%type<list (option Cabs.name * option Cabs.expression) (* Reverse order *)>
+%type<(option Cabs.name * option Cabs.expression) * list (option RcAnnot.member_annot * (option Cabs.name * option Cabs.expression)) (* Reverse order *)>
   struct_declarator_list
 %type<option Cabs.name * option Cabs.expression> struct_declarator
-%type<list (Cabs.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
+%type<list (RcAnnot.string * option Cabs.expression * Cabs.loc) (* Reverse order *)>
   enumerator_list
-%type<Cabs.string * option Cabs.expression * Cabs.loc> enumerator
-%type<Cabs.string * Cabs.loc> enumeration_constant
+%type<RcAnnot.string * option Cabs.expression * Cabs.loc> enumerator
+%type<RcAnnot.string * Cabs.loc> enumeration_constant
 %type<Cabs.cvspec * Cabs.loc> type_qualifier type_qualifier_noattr
 %type<Cabs.funspec * Cabs.loc> function_specifier
 %type<Cabs.name> declarator declarator_noattrend direct_declarator
@@ -107,9 +112,9 @@ Require Cabs.
 %type<Cabs.gcc_attribute> gcc_attribute
 %type<list Cabs.gcc_attribute> gcc_attribute_list
 %type<Cabs.gcc_attribute_word> gcc_attribute_word
-%type<list Cabs.string (* Reverse order *)> identifier_list
+%type<list RcAnnot.string (* Reverse order *)> identifier_list
 %type<list Cabs.asm_flag> asm_flags
-%type<option Cabs.string> asm_op_name
+%type<option RcAnnot.string> asm_op_name
 %type<Cabs.asm_operand> asm_operand
 %type<list Cabs.asm_operand> asm_operands asm_operands_ne
 %type<list Cabs.asm_operand * list Cabs.asm_operand * list Cabs.asm_flag> asm_arguments
@@ -368,12 +373,17 @@ constant_expression:
 (* 6.7 *)
 declaration:
 | decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
-    { Cabs.DECDEF (fst decspec, rev' decls) (snd decspec) }
+    { Cabs.DECDEF None (fst decspec, rev' decls) (snd decspec) }
 | decspec = declaration_specifiers SEMICOLON
-    { Cabs.DECDEF (fst decspec, []) (snd decspec) }
+    { Cabs.DECDEF None (fst decspec, []) (snd decspec) }
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.STATIC_ASSERT e loc_e s loc_s loc }
+(* non-standard *)
+| annot = FUNCTION_ANNOT decspec = declaration_specifiers decls = init_declarator_list SEMICOLON
+    { Cabs.DECDEF annot (fst decspec, rev' decls) (snd decspec) }
+| annot = FUNCTION_ANNOT decspec = declaration_specifiers SEMICOLON
+    { Cabs.DECDEF annot (fst decspec, []) (snd decspec) }
 
 declaration_specifiers_typespec_opt:
 | storage = storage_class_specifier rest = declaration_specifiers_typespec_opt
@@ -464,14 +474,26 @@ type_specifier:
 struct_or_union_specifier:
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list
   LBRACE decls = struct_declaration_list RBRACE
-    { (Cabs.Tstruct_union (fst str_uni) None (Some (rev' decls)) attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) None (Some (rev' decls)) attrs,
        snd str_uni) }
 | str_uni = struct_or_union attrs = attribute_specifier_list id = OTHER_NAME
-    { (Cabs.Tstruct_union (fst str_uni) (Some (fst id)) None attrs,
+    { (Cabs.Tstruct_union (Some (Cabs.default_su_annot (fst str_uni))) (fst str_uni) (Some (fst id)) None attrs,
+       snd str_uni) }
+(* Non-standard *)
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
+  LBRACE decls = struct_declaration_list RBRACE
+    { (Cabs.Tstruct_union annot (fst str_uni) (Some (fst id)) (Some (rev' decls)) attrs,
+       snd str_uni) }
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT
+  LBRACE decls = struct_declaration_list RBRACE
+    { (Cabs.Tstruct_union annot (fst str_uni) None (Some (rev' decls)) attrs,
+       snd str_uni) }
+| str_uni = struct_or_union attrs = attribute_specifier_list annot = STRUCT_ANNOT id = OTHER_NAME
+    { (Cabs.Tstruct_union annot (fst str_uni) (Some (fst id)) None attrs,
        snd str_uni) }
 
 struct_or_union:
@@ -488,14 +510,17 @@ struct_declaration_list:
 
 struct_declaration:
 | decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
-    { Cabs.Field_group (fst decspec) (rev' decls) (snd decspec) }
+    { Cabs.Field_group (fst decspec) ((Some RcAnnot.default_member_annot, fst decls) :: rev' (snd decls)) (snd decspec) }
 (* Extension to C99 grammar needed to parse some GNU header files. *)
 | decspec = specifier_qualifier_list SEMICOLON
-    { Cabs.Field_group (fst decspec) [(None,None)] (snd decspec) }
+    { Cabs.Field_group (fst decspec) [(Some RcAnnot.default_member_annot,(None,None))] (snd decspec) }
 (* C11 static assertions *)
 | asrt = static_assert_declaration
     { let '((e, loc_e), (s, loc_s), loc) := asrt in
       Cabs.Field_group_static_assert e loc_e s loc_s loc }
+(* Non-standard *)
+| annot = MEMBER_ANNOT decspec = specifier_qualifier_list decls = struct_declarator_list SEMICOLON
+    { Cabs.Field_group (fst decspec) ((annot, fst decls) :: rev' (snd decls)) (snd decspec) }
 
 specifier_qualifier_list:
 | typ = type_specifier rest = specifier_qualifier_list
@@ -509,9 +534,12 @@ specifier_qualifier_list:
 
 struct_declarator_list:
 | decl = struct_declarator
-    { [decl] }
+    { (decl, []) }
 | declq = struct_declarator_list COMMA declt = struct_declarator
-    { declt::declq }
+    { (fst declq, (Some RcAnnot.default_member_annot, declt)::snd declq) }
+(* Non-standard *)
+| declq = struct_declarator_list COMMA annot = MEMBER_ANNOT declt = struct_declarator
+    { (fst declq, (annot, declt)::snd declq) }
 
 struct_declarator:
 | decl = declarator
@@ -587,8 +615,6 @@ attribute_specifier:
     { (Cabs.ALIGNAS_ATTR (rev' args) loc, loc) }
 | loc = ALIGNAS LPAREN typ = type_name RPAREN
     { (Cabs.ALIGNAS_ATTR [Cabs.ALIGNOF typ] loc, loc) }
-| v = RCANNO
-    { (Cabs.RC_ATTR (fst v) (snd v), snd v) }
 
 gcc_attribute_list:
 | a = gcc_attribute
@@ -663,12 +689,6 @@ direct_declarator:
   expr = assignment_expression RBRACK
     { let 'Cabs.Name name typ attr loc := decl in
       Cabs.Name name (Cabs.ARRAY typ (rev' quallst) (Some (fst expr))) attr loc }
-| decl = direct_declarator LBRACK quallst = type_qualifier_list STAR RBRACK
-    { let 'Cabs.Name name typ attr loc := decl in
-      Cabs.Name name (Cabs.ARRAY typ (rev' quallst) None) attr loc }
-| decl = direct_declarator LBRACK STAR RBRACK
-    { let 'Cabs.Name name typ attr loc := decl in
-      Cabs.Name name (Cabs.ARRAY typ [] None) attr loc }
 | decl = direct_declarator LPAREN params = parameter_type_list RPAREN
     { let 'Cabs.Name name typ attr loc := decl in
       Cabs.Name name (Cabs.PROTO typ params) attr loc }
@@ -771,14 +791,6 @@ direct_abstract_declarator:
     { Cabs.ARRAY typ cvspec (Some (fst expr)) }
 | LBRACK cvspec = type_qualifier_list STATIC expr = assignment_expression RBRACK
     { Cabs.ARRAY Cabs.JUSTBASE cvspec (Some (fst expr)) }
-| typ = direct_abstract_declarator LBRACK cvspec = type_qualifier_list STAR RBRACK
-    { Cabs.ARRAY typ cvspec None }
-| typ = direct_abstract_declarator LBRACK STAR RBRACK
-    { Cabs.ARRAY typ [] None }
-| LBRACK cvspec = type_qualifier_list STAR RBRACK
-    { Cabs.ARRAY Cabs.JUSTBASE cvspec None }
-| LBRACK STAR RBRACK
-    { Cabs.ARRAY Cabs.JUSTBASE [] None }
 | typ = direct_abstract_declarator LPAREN params = parameter_type_list RPAREN
     { Cabs.PROTO typ params }
 | LPAREN params = parameter_type_list RPAREN
@@ -842,6 +854,11 @@ statement_dangerous:
 (* Non-standard *)
 | stmt = asm_statement
     { stmt }
+| annot = INLINE_ANNOT
+    { match annot with
+      | (Some a, loc) => Cabs.ANNOT a loc
+      | (None, loc) => Cabs.NOP loc
+      end }
 
 statement_safe:
 | stmt = labeled_statement(statement_safe)
@@ -853,6 +870,11 @@ statement_safe:
 (* Non-standard *)
 | stmt = asm_statement
     { stmt }
+| annot = INLINE_ANNOT
+    { match annot with
+      | (Some a, loc) => Cabs.ANNOT a loc
+      | (None, loc) => Cabs.NOP loc
+      end }
 
 (* 6.8.1 *)
 labeled_statement(last_statement):
@@ -884,8 +906,6 @@ block_item:
 (* Non-standard *)
 | p = PRAGMA
     { Cabs.DEFINITION (Cabs.PRAGMA (fst p) (snd p)) }
-| v = RCANNO SEMICOLON
-    { Cabs.RC_STMT (fst v) (snd v) }
 
 (* 6.8.3 *)
 expression_statement:
@@ -914,40 +934,76 @@ selection_statement_safe:
 (* 6.8.5 *)
 iteration_statement(last_statement):
 | loc = WHILE LPAREN expr = expression RPAREN stmt = last_statement
-    { Cabs.WHILE (fst expr) stmt loc }
+    { Cabs.WHILE None (fst expr) stmt loc }
 | loc = DO stmt = statement_dangerous WHILE LPAREN expr = expression RPAREN SEMICOLON
-    { Cabs.DOWHILE (fst expr) stmt loc }
+    { Cabs.DOWHILE None (fst expr) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON
   expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON
   expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON expr3 = expression RPAREN 
   stmt = last_statement
-    { Cabs.FOR None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON expr3 = expression RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN decl1 = declaration SEMICOLON expr3 = expression RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN SEMICOLON SEMICOLON expr3 = expression RPAREN stmt = last_statement
-    { Cabs.FOR None None (Some (fst expr3)) stmt loc }
+    { Cabs.FOR None None None (Some (fst expr3)) stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON RPAREN
   stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR None (Some (fst expr2)) None stmt loc }
+    { Cabs.FOR None None (Some (fst expr2)) None stmt loc }
 | loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
 | loc = FOR LPAREN decl1 = declaration SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR (Some (Cabs.FC_DECL decl1)) None None stmt loc }
+    { Cabs.FOR None (Some (Cabs.FC_DECL decl1)) None None stmt loc }
 | loc = FOR LPAREN SEMICOLON SEMICOLON RPAREN stmt = last_statement
-    { Cabs.FOR None None None stmt loc }
+    { Cabs.FOR None None None None stmt loc }
+(* Non-standard *)
+| annot = LOOP_ANNOT loc = WHILE LPAREN expr = expression RPAREN stmt = last_statement
+    { Cabs.WHILE (Some annot) (fst expr) stmt loc }
+| annot = LOOP_ANNOT loc = DO stmt = statement_dangerous WHILE LPAREN expr = expression RPAREN SEMICOLON
+    { Cabs.DOWHILE (Some annot) (fst expr) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON
+  expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON
+  expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON expr3 = expression RPAREN 
+  stmt = last_statement
+    { Cabs.FOR (Some annot) None (Some (fst expr2)) (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON expr3 = expression RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration SEMICOLON expr3 = expression RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON SEMICOLON expr3 = expression RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None None (Some (fst expr3)) stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON expr2 = expression SEMICOLON RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration expr2 = expression SEMICOLON RPAREN
+  stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON expr2 = expression SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None (Some (fst expr2)) None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN expr1 = expression SEMICOLON SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_EXP (fst expr1))) None None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN decl1 = declaration SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) (Some (Cabs.FC_DECL decl1)) None None stmt loc }
+| annot = LOOP_ANNOT loc = FOR LPAREN SEMICOLON SEMICOLON RPAREN stmt = last_statement
+    { Cabs.FOR (Some annot) None None None stmt loc }
 
 (* 6.8.6 *)
 jump_statement:
@@ -1044,11 +1100,23 @@ function_definition:
   decl = declarator_noattrend
   dlist = declaration_list
   stmt = compound_statement
-   { Cabs.FUNDEF (fst specs) decl (List.rev' dlist) stmt (snd specs) }
+   { Cabs.FUNDEF (fst specs) decl (Some RcAnnot.default_function_annot) (List.rev' dlist) stmt (snd specs) }
 | specs = declaration_specifiers
   decl = declarator
   stmt = compound_statement
-    { Cabs.FUNDEF (fst specs) decl [] stmt (snd specs) }
+    { Cabs.FUNDEF (fst specs) decl (Some RcAnnot.default_function_annot) [] stmt (snd specs) }
+(* Non-standard *)
+| annot = FUNCTION_ANNOT
+  specs = declaration_specifiers
+  decl = declarator_noattrend
+  dlist = declaration_list
+  stmt = compound_statement
+   { Cabs.FUNDEF (fst specs) decl annot (List.rev' dlist) stmt (snd specs) }
+| annot = FUNCTION_ANNOT
+  specs = declaration_specifiers
+  decl = declarator
+  stmt = compound_statement
+    { Cabs.FUNDEF (fst specs) decl annot [] stmt (snd specs) }
 
 declaration_list:
 | d = declaration
