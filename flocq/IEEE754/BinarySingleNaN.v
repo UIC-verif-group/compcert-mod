@@ -956,7 +956,7 @@ Proof.
   - apply Z.lt_le_trans with
       (2 ^ Z.of_nat n' * (shr_m (iter_nat shr_1 n' mrs) + 1))%Z; [assumption |].
     rewrite <-Z.mul_assoc. apply Z.mul_le_mono_nonneg_l; [lia |].
-    apply Ztac.Zlt_le_add_1. now apply le_shr1_le.
+    rewrite Z.add_1_r. apply Zlt_le_succ. now apply le_shr1_le.
 Qed.
 
 Lemma shr_limit :
@@ -1595,7 +1595,7 @@ destruct (ex' - ex)%Z as [|d|d] eqn:Hd ; simpl.
 - now replace ex with ex' by lia.
 - exfalso ; lia.
 - refine (conj _ eq_refl).
-  rewrite shift_pos_correct, Zmult_comm.
+  setoid_rewrite shift_pos_correct. rewrite Zmult_comm.
   change (Zpower_pos 2 d) with (Zpower radix2 (Z.opp (Z.neg d))).
   rewrite <- Hd.
   replace (- (ex' - ex))%Z with (ex - ex')%Z by ring.

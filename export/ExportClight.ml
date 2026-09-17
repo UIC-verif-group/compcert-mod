@@ -180,7 +180,7 @@ let print_ident_globdef p = function
 (* The prologue *)
 
 let prologue = "\
-From Coq Require Import String List ZArith.\n\
+Require Import String List ZArith.\n\
 From compcert Require Import Coqlib Integers Floats AST Ctypes Cop Clight Clightdefs.\n\
 Set Warnings \"-notation-overridden,-custom-entry-overridden,-hiding-delimiting-key\".\n\
 From VST.typing Require Import ClightSugar.\n\

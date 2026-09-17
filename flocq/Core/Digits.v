@@ -1122,7 +1122,7 @@ Proof.
   destruct x as [| p | p]; [intros _; now simpl | intros _ | lia].
   transitivity (Zdigits (Z.pos p * beta ^ 1));
     [apply Zdigits_le; [lia |] | rewrite Zdigits_mult_Zpower; lia].
-  apply Ztac.Zlt_le_add_1. rewrite <-Z.mul_1_r at 1. apply Zmult_lt_compat_l; [lia |].
+  rewrite Z.add_1_r. apply Zlt_le_succ. rewrite <-Z.mul_1_r at 1. apply Zmult_lt_compat_l; [lia |].
   rewrite Z.pow_1_r. apply radix_gt_1.
 Qed.
 
