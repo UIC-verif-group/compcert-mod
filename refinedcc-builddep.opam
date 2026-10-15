@@ -9,6 +9,9 @@ maintainer: "William Mansky"
 homepage: "https://github.com/UIC-verif-group/compcert-mod/"
 
 depends: [
+  "rocq-core" {>= "9.0.0"}
+  "dune" {>= "3.21.0"}
+  "coq-flocq" {>= "4.1.0" & < "5~"}
   "cmdliner" {>= "1.1.0"}
   "earley" {= "3.0.0"}
   "toml" {>= "6.0.0"}
