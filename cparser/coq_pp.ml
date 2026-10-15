@@ -1380,7 +1380,7 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
   let func_annot = match def.fd_annot with Some annot -> annot | None -> assert false
   in
   pp "@[<v 2>Section proof_%s.@;" func_name;
-  pp "Context `{!typeG OK_ty Σ} `{!globalG OK_ty Σ} (Espec : ext_spec OK_ty).";
+  pp "Context `{!typeG OK_ty Σ} `{!globalG OK_ty Σ}.";
   List.iter (pp "@;%s.") ctxt;
 
   (* Statement of the typing proof. *)
@@ -1438,13 +1438,13 @@ let pp_proof : string -> Coq_path.t -> C.fundef -> import list -> string list
       pp "adr2val global_%s ◁ᵥ|tptr (type_of_function f_%s)| global_%s @@ " f f f;
       begin
         match inlined_def with
-        | Some(def) -> pp "inline_function_ptr Espec (globalenv prog) %a" pp_impl def
-        | None      -> pp "function_ptr Espec (globalenv prog) type_of_%s" f
+        | Some(def) -> pp "inline_function_ptr (globalenv prog) %a" pp_impl def
+        | None      -> pp "function_ptr (globalenv prog) type_of_%s" f
       end;
       pp " -∗@;"
     in
     List.iter pp_dep used_functions;
-    pp "%styped_function Espec (globalenv prog) %a type_of_%s.@]@;" prefix pp_impl def func_name
+    pp "%styped_function (globalenv prog) %a type_of_%s.@]@;" prefix pp_impl def func_name
   end;
 
   (* We have a manual proof. *)

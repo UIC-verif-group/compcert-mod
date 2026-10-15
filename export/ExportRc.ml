@@ -348,7 +348,7 @@ let run : config -> string -> unit = fun cfg c_file ->
   (* Generate the dune file. *)
   let theories =
     let default_theories = ["VST.typing"; "VST.typing.automation"; "VST.lithium"; "VST.floyd"; "VST.veric"; "VST.sepcomp"; "VST.msl"; "VST.shared";
-                            "VST.zlist"; "iris_ora"; "lithium"; "iris"; "stdpp"; "compcert"; "Flocq"; "Ltac2"; "RecordUpdate"] in
+                            "VST.zlist"; "iris_ora"; "lithium"; "Stdlib"; "iris"; "stdpp"; "compcert"; "Flocq"; "Ltac2"; "RecordUpdate"] in
     let glob = List.map Coq_path.to_string c_file.proj_cfg.project_theories in
     let imports = ca.ca_imports @ ca.ca_proof_imports @ ca.ca_code_imports in
     let imports = List.sort_uniq Stdlib.compare imports in
